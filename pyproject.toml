@@ -1,0 +1,89 @@
+[tool.ruff]
+include = ["pycparser/*"]
+line-length = 120
+target-version = "py38"
+
+[tool.ruff.lint]
+select = [
+    "F",
+    "E",
+    "I",
+    "UP",
+    "YTT",
+    "ANN",
+    "S",
+    "BLE",
+    "B",
+    "A",
+    "COM",
+    "C4",
+    "DTZ",
+    "EM",
+    "ISC",
+    "G",
+    "INP",
+    "PIE",
+    "T20",
+    "PYI",
+    "RSE",
+    "RET",
+    "SIM",
+    "TID",
+    "PTH",
+    "ERA",
+    "PD",
+    "PL",
+    "TRY",
+    "NPY",
+    "RUF",
+]
+extend-ignore = [
+    "S101",   # Use of assert here is a known quantity. Blame typing memes.
+    "C90",    # McCabe complexity memes.
+    "PD011",  # Erroneous issue that triggers for any .values attribute access at all.
+    "S311",   # No need for cryptographically secure random number generation in this use case.
+    "ANN101", # Type of self is implicit.
+    "ANN102", # Type of cls is implicit.
+    "ANN204", # Special method return types are known by type checker.
+    "ANN401", # Not sure how else to type *args and **kwargs when they could be anything.
+    "PLR",    # Complexity things.
+    "PYI036", # Bug with annotations for __exit__.
+    # Recommended by Ruff when using Ruff format.
+    "E111",
+    "E114",
+    "E117",
+    "Q003",
+    "COM812",
+    "COM819",
+    "E501",
+    "ISC001",
+    "ISC002",
+    # For strings in exception calls.
+    "TRY003",
+    "EM101",
+    "EM102",
+    "SIM108", # Don't always use ternary, for the sake of readability.
+    "ERA001", # Commented code.
+]
+unfixable = [
+    "ERA", # I don't want anything erroneously detected deleted by this.
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F403", "PLC0414"] # Star import usually throws these.
+
+[tool.ruff.lint.pyupgrade]
+keep-runtime-typing = true
+
+[tool.ruff.format]
+quote-style = "preserve"
+
+[tool.pyright]
+include = ["pycparser/sly/cparsing"]
+exclude = ["pycparser/sly/cparsing/cparser.py"]
+pythonVersion = "3.8"
+typeCheckingMode = "strict"
+
+reportPrivateUsage = "none"
+reportUnnecessaryIsInstance = "information"
+reportUnnecessaryTypeIgnoreComment = "warning"
