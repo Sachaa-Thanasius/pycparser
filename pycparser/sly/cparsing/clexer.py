@@ -101,42 +101,42 @@ class CLexer(Lexer):
         INT128,
     }
 
-    AUTO = 'auto'
-    BREAK = 'break'
-    CASE = 'case'
-    CHAR = 'char'
-    CONST = 'const'
-    CONTINUE = 'continue'
-    DEFAULT = 'default'
-    DO = 'do'
-    DOUBLE = 'double'
-    ELSE = 'else'
-    ENUM = 'enum'
-    EXTERN = 'extern'
-    FLOAT = 'float'
-    FOR = 'for'
-    GOTO = 'goto'
-    IF = 'if'
-    INLINE = 'intline'
-    INT = 'int'
-    LONG = 'long'
-    REGISTER = 'register'
-    OFFSETOF = 'offsetof'
-    RESTRICT = 'restrict'
-    RETURN = 'return'
-    SHORT = 'short'
-    SIGNED = 'signed'
-    SIZEOF = 'sizeof'
-    STATIC = 'static'
-    STRUCT = 'struct'
-    SWITCH = 'switch'
-    TYPEDEF = 'typedef'
-    UNION = 'union'
-    UNSIGNED = 'unsigned'
-    VOID = 'void'
-    VOLATILE = 'volatile'
-    WHILE = 'while'
-    INT128 = '__int128'
+    AUTO        = 'auto'
+    BREAK       = 'break'
+    CASE        = 'case'
+    CHAR        = 'char'
+    CONST       = 'const'
+    CONTINUE    = 'continue'
+    DEFAULT     = 'default'
+    DO          = 'do'
+    DOUBLE      = 'double'
+    ELSE        = 'else'
+    ENUM        = 'enum'
+    EXTERN      = 'extern'
+    FLOAT       = 'float'
+    FOR         = 'for'
+    GOTO        = 'goto'
+    IF          = 'if'
+    INLINE      = 'intline'
+    INT         = 'int'
+    LONG        = 'long'
+    REGISTER    = 'register'
+    OFFSETOF    = 'offsetof'
+    RESTRICT    = 'restrict'
+    RETURN      = 'return'
+    SHORT       = 'short'
+    SIGNED      = 'signed'
+    SIZEOF      = 'sizeof'
+    STATIC      = 'static'
+    STRUCT      = 'struct'
+    SWITCH      = 'switch'
+    TYPEDEF     = 'typedef'
+    UNION       = 'union'
+    UNSIGNED    = 'unsigned'
+    VOID        = 'void'
+    VOLATILE    = 'volatile'
+    WHILE       = 'while'
+    INT128      = '__int128'
 
     keywords_new: set[str] = {
         BOOL_, COMPLEX_,
@@ -145,15 +145,15 @@ class CLexer(Lexer):
         PRAGMA_,
     }
 
-    BOOL_ = '_Bool'
-    COMPLEX_ = '_Complex'
-    NORETURN_ = '_Noreturn'
-    THREAD_LOCAL_ = '_Thread_local'
-    STATIC_ASSERT_ = '_Static_assert'
-    ATOMIC_ = '_Atomic'
-    ALIGNOF_ = '_Alignof'
-    ALIGNAS_ = '_Alignas'
-    PRAGMA_ = '_Pragma'
+    BOOL_           = '_Bool'
+    COMPLEX_        = '_Complex'
+    NORETURN_       = '_Noreturn'
+    THREAD_LOCAL_   = '_Thread_local'
+    STATIC_ASSERT_  = '_Static_assert'
+    ATOMIC_         = '_Atomic'
+    ALIGNOF_        = '_Alignof'
+    ALIGNAS_        = '_Alignas'
+    PRAGMA_         = '_Pragma'
 
     keyword_map: dict[str, str] = {str(keyword): keyword for keyword in keywords}
     keyword_map.update({str(keyword): keyword for keyword in keywords_new})
@@ -206,12 +206,10 @@ class CLexer(Lexer):
             # Ellipsis (...)
             ELLIPSIS,
 
-            # Delimiters
+            # Delimiters (excluding a few in literals below)
             LPAREN, RPAREN,         # ( )
             LBRACKET, RBRACKET,     # [ ]
             LBRACE, RBRACE,         # { }
-            COMMA, PERIOD,          # . ,
-            SEMI, COLON,            # ; :
 
             # pre-processor
             PPHASH,       # '#'
@@ -219,13 +217,22 @@ class CLexer(Lexer):
             PPPRAGMASTR,
         }
     )
-    # fmt: on
 
-    
+    # More delimiters. Might be expanded.
+    literals = {
+        # Operators
+        # '=', '!', '<', '>', '+', '-', '*', '/', '%', '|', '&', '~', '^', '?',
+        # Delimiters
+        # '(', ')', '[', ']',
+        ',', '.', ';', ':',
+        # Scope delimiters
+        # '{', '}',
+    }
+    # fmt: on
 
     ignore = ' \t'
 
-    # ==== The actual tokens
+    # ==== The rest of the tokens
 
     @_(r'[ \t]*\#')
     def PPHASH(self, t: Token) -> Token | None:
@@ -347,10 +354,6 @@ class CLexer(Lexer):
     RPAREN      = r'\)'
     LBRACKET    = r'\['
     RBRACKET    = r'\]'
-    COMMA       = r','
-    PERIOD      = r'\.'
-    SEMI        = r';'
-    COLON       = r':'
 
     # Scope delimiters
     LBRACE      = r'\{'

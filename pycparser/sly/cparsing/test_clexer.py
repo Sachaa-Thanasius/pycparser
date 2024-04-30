@@ -28,7 +28,7 @@ def do_lex(lexer: CLexer, inp: str) -> list[str]:
         ('case int', ['CASE', 'INT']),
         ('caseint', ['ID']),
         ('$dollar cent$', ['ID', 'ID']),
-        ('i ^= 1;', ['ID', 'XOREQUAL', 'INT_CONST_DEC', 'SEMI']),
+        ('i ^= 1;', ['ID', 'XOREQUAL', 'INT_CONST_DEC', ';']),
     ],
 )
 def test_trivial_tokens(clex: CLexer, test_input: str, expected: list[str]) -> None:
@@ -85,9 +85,9 @@ def test_special_names(clex: CLexer, test_input: str, expected: list[str]) -> No
 @pytest.mark.parametrize(
     ("test_input", "expected"),
     [
-        ('_Bool', ['_BOOL']),
-        ('_Atomic', ['_ATOMIC']),
-        ('_Alignas _Alignof', ['_ALIGNAS', '_ALIGNOF']),
+        ('_Bool', ['BOOL_']),
+        ('_Atomic', ['ATOMIC_']),
+        ('_Alignas _Alignof', ['ALIGNAS_', 'ALIGNOF_']),
     ],
 )
 def test_new_keywords(clex: CLexer, test_input: str, expected: list[str]) -> None:
@@ -101,7 +101,7 @@ def test_new_keywords(clex: CLexer, test_input: str, expected: list[str]) -> Non
         ('01.5', ['FLOAT_CONST']),
         ('.15L', ['FLOAT_CONST']),
         ('0.', ['FLOAT_CONST']),
-        ('.', ['PERIOD']),  # but just a period is a period
+        ('.', ['.']),  # but just a period is a period
         ('3.3e-3', ['FLOAT_CONST']),
         ('.7e25L', ['FLOAT_CONST']),
         ('6.e+125f', ['FLOAT_CONST']),
@@ -219,7 +219,7 @@ def test_string_literal(clex: CLexer, test_input: str, expected: list[str]) -> N
                 'NE',
             ],
         ),
-        (r'++--->?.,;:', ['PLUSPLUS', 'MINUSMINUS', 'ARROW', 'CONDOP', 'PERIOD', 'COMMA', 'SEMI', 'COLON']),
+        (r'++--->?.,;:', ['PLUSPLUS', 'MINUSMINUS', 'ARROW', 'CONDOP', '.', ',', ';', ':']),
     ],
 )
 def test_mess(clex: CLexer, test_input: str, expected: list[str]) -> None:
@@ -239,7 +239,7 @@ def test_mess(clex: CLexer, test_input: str, expected: list[str]) -> None:
         ('x <<= z << 5', ['ID', 'LSHIFTEQUAL', 'ID', 'LSHIFT', 'INT_CONST_DEC']),
         (
             'x = y > 0 ? y : -6',
-            ['ID', 'EQUALS', 'ID', 'GT', 'INT_CONST_OCT', 'CONDOP', 'ID', 'COLON', 'MINUS', 'INT_CONST_DEC'],
+            ['ID', 'EQUALS', 'ID', 'GT', 'INT_CONST_OCT', 'CONDOP', 'ID', ':', 'MINUS', 'INT_CONST_DEC'],
         ),
         ('a+++b', ['ID', 'PLUSPLUS', 'PLUS', 'ID']),
     ],
@@ -260,17 +260,17 @@ def test_exprs(clex: CLexer, test_input: str, expected: list[str]) -> None:
                 'ID',
                 'EQUALS',
                 'INT_CONST_OCT',
-                'SEMI',
+                ';',
                 'ID',
                 'LT',
                 'ID',
-                'SEMI',
+                ';',
                 'PLUSPLUS',
                 'ID',
                 'RPAREN',
             ],
         ),
-        ('self: goto self;', ['ID', 'COLON', 'GOTO', 'ID', 'SEMI']),
+        ('self: goto self;', ['ID', ':', 'GOTO', 'ID', ';']),
         (
             """ switch (typ)
             {
@@ -288,19 +288,19 @@ def test_exprs(clex: CLexer, test_input: str, expected: list[str]) -> None:
                 'LBRACE',
                 'CASE',
                 'ID',
-                'COLON',
+                ':',
                 'ID',
                 'EQUALS',
                 'INT_CONST_DEC',
-                'SEMI',
+                ';',
                 'BREAK',
-                'SEMI',
+                ';',
                 'DEFAULT',
-                'COLON',
+                ':',
                 'ID',
                 'EQUALS',
                 'INT_CONST_DEC',
-                'SEMI',
+                ';',
                 'RBRACE',
             ],
         ),
@@ -427,7 +427,7 @@ def test_preprocessor_pragma(clex: CLexer) -> None:
     t6l = next(tokenizer)
     t6b = next(tokenizer)
     t6r = next(tokenizer)
-    assert t6a.type == '_PRAGMA'
+    assert t6a.type == 'PRAGMA_'
     assert t6l.type == 'LPAREN'
     assert t6b.type == 'STRING_LITERAL'
     assert t6b.value == '"something else"'

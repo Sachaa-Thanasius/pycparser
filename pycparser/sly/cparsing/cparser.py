@@ -44,7 +44,7 @@ class CParser(Parser):
     debugfile = 'sly_cparser.out'
 
     # Get the token list from the lexer (required)
-    tokens = CLexer.tokens  # | PPLineLexer.tokens | PPPragmaLexer.tokens
+    tokens = CLexer.tokens
 
     def _select_struct_union_class(self, token: str) -> type[c_ast.Struct | c_ast.Union]:
         """Given a token (either STRUCT or UNION), selects the appropriate AST class."""
@@ -214,7 +214,7 @@ class CParser(Parser):
     def external_declaration(self, p: Any):
         return [p[0]]
 
-    @_('SEMI')
+    @_('";"')
     def external_declaration(self, p: Any) -> list[Any]:
         return []
 
@@ -222,13 +222,9 @@ class CParser(Parser):
     def external_declaration(self, p: Any):
         return p.static_assert
 
-    @_('_STATIC_ASSERT LPAREN constant_expression COMMA unified_string_literal RPAREN')
+    @_('STATIC_ASSERT_ LPAREN constant_expression [ "," unified_string_literal ] RPAREN')
     def static_assert(self, p: Any):
         return c_ast.StaticAssert(p.constant_expression, p.unified_string_literal, self._token_coord(p, 1))
-
-    @_('_STATIC_ASSERT LPAREN constant_expression RPAREN')
-    def static_assert(self, p: Any):
-        return c_ast.StaticAssert(p.constant_expression, None, self._token_coord(p, 1))
 
     @_('PPHASH')
     def pp_directive(self, p: Any):
@@ -247,7 +243,7 @@ class CParser(Parser):
     def pppragma_directive(self, p: Any):
         return c_ast.Pragma(p[1], self._token_coord(p, 2))
 
-    @_('_PRAGMA LPAREN unified_string_literal RPAREN')
+    @_('PRAGMA_ LPAREN unified_string_literal RPAREN')
     def pppragma_directive(self, p: Any):
         return c_ast.Pragma(p[2], self._token_coord(p, 1))
 
@@ -414,21 +410,21 @@ class CParser(Parser):
         return decls
 
     # The declaration has been split to a decl_body sub-rule and
-    # SEMI, because having them in a single rule created a problem
+    # ";", because having them in a single rule created a problem
     # for defining typedefs.
     #
     # If a typedef line was directly followed by a line using the
     # type defined with the typedef, the type would not be
     # recognized. This is because to reduce the declaration rule,
-    # the parser's lookahead asked for the token after SEMI, which
+    # the parser's lookahead asked for the token after ";", which
     # was the type from the next line, and the lexer had no chance
     # to see the updated type symbol table.
     #
-    # Splitting solves this problem, because after seeing SEMI,
+    # Splitting solves this problem, because after seeing ";",
     # the parser reduces decl_body, which actually adds the new
     # type into the table to be seen by the lexer before the next
     # line is reached.
-    @_('decl_body SEMI')
+    @_('decl_body ";"')
     def declaration(self, p: Any):
         return p.decl_body
 
@@ -538,27 +534,27 @@ class CParser(Parser):
             append=True,
         )
 
-    @_('AUTO', 'REGISTER', 'STATIC', 'EXTERN', 'TYPEDEF', '_THREAD_LOCAL')
+    @_('AUTO', 'REGISTER', 'STATIC', 'EXTERN', 'TYPEDEF', 'THREAD_LOCAL_')
     def storage_class_specifier(self, p: Any):
         return p[0]
 
-    @_('INLINE', '_NORETURN')
+    @_('INLINE', 'NORETURN_')
     def function_specifier(self, p: Any):
         return p[0]
 
     @_(
         'VOID',
-        '_BOOL',
+        'BOOL_',
         'CHAR',
         'SHORT',
         'INT',
         'LONG',
         'FLOAT',
         'DOUBLE',
-        '_COMPLEX',
+        'COMPLEX_',
         'SIGNED',
         'UNSIGNED',
-        '__INT128',
+        'INT128',
     )
     def type_specifier_no_typeid(self, p: Any):
         return c_ast.IdentifierType([p[0]], coord=self._token_coord(p, 1))
@@ -568,17 +564,17 @@ class CParser(Parser):
         return p[0]
 
     # See section 6.7.2.4 of the C11 standard.
-    @_('_ATOMIC LPAREN type_name RPAREN')
+    @_('ATOMIC_ LPAREN type_name RPAREN')
     def atomic_specifier(self, p: Any):
         typ = p.type_name
         typ.quals.append('_Atomic')
         return typ
 
-    @_('CONST', 'RESTRICT', 'VOLATILE', '_ATOMIC')
+    @_('CONST', 'RESTRICT', 'VOLATILE', 'ATOMIC_')
     def type_qualifier(self, p: Any):
         return p[0]
 
-    @_('init_declarator { COMMA init_declarator }')
+    @_('init_declarator { "," init_declarator }')
     def init_declarator_list(self, p: Any):
         return [p.init_declarator0, *p.init_declarator1]
 
@@ -597,7 +593,7 @@ class CParser(Parser):
     def id_init_declarator_list(self, p: Any):
         return [p.id_init_declarator]
 
-    @_('id_init_declarator_list COMMA init_declarator')
+    @_('id_init_declarator_list "," init_declarator')
     def id_init_declarator_list(self, p: Any):
         return [*p.id_init_declarator_list, p.init_declarator]
 
@@ -680,7 +676,7 @@ class CParser(Parser):
     def struct_declaration_list(self, p: Any):
         return p.struct_declaration0 + (p.struct_declaration1 or [])
 
-    @_('specifier_qualifier_list struct_declarator_list_opt SEMI')
+    @_('specifier_qualifier_list struct_declarator_list_opt ";"')
     def struct_declaration(self, p: Any):
         spec = p.specifier_qualifier_list
         assert 'typedef' not in spec['storage']
@@ -711,7 +707,7 @@ class CParser(Parser):
 
         return decls
 
-    @_('SEMI')
+    @_('";"')
     def struct_declaration(self, p: Any):
         return None
 
@@ -719,7 +715,7 @@ class CParser(Parser):
     def struct_declaration(self, p: Any):
         return [p.pppragma_directive]
 
-    @_('struct_declarator { COMMA struct_declarator }')
+    @_('struct_declarator { "," struct_declarator }')
     def struct_declarator_list(self, p: Any):
         return [p.struct_declarator0, *p.struct_declarator1]
 
@@ -734,11 +730,11 @@ class CParser(Parser):
     def struct_declarator(self, p: Any):
         return {'decl': p.declarator, 'bitsize': None}
 
-    @_('declarator COLON constant_expression')
+    @_('declarator ":" constant_expression')
     def struct_declarator(self, p: Any):
         return {'decl': p.declarator, 'bitsize': p.constant_expression}
 
-    @_('COLON constant_expression')
+    @_('":" constant_expression')
     def struct_declarator(self, p: Any):
         return {'decl': c_ast.TypeDecl(None, None, None, None), 'bitsize': p.constant_expression}
 
@@ -761,18 +757,18 @@ class CParser(Parser):
     def enumerator_list(self, p: Any):
         return c_ast.EnumeratorList([p.enumerator], p.enumerator.coord)
 
-    @_('enumerator_list COMMA')
+    @_('enumerator_list ","')
     def enumerator_list(self, p: Any):
         return p.enumerator_list
 
-    @_('enumerator_list COMMA enumerator')
+    @_('enumerator_list "," enumerator')
     def enumerator_list(self, p: Any):
         p.enumerator_list.enumerators.append(p.enumerator)
         return p.enumerator_list
 
     @_(
-        '_ALIGNAS LPAREN type_name RPAREN',
-        '_ALIGNAS LPAREN constant_expression RPAREN',
+        'ALIGNAS_ LPAREN type_name RPAREN',
+        'ALIGNAS_ LPAREN constant_expression RPAREN',
     )
     def alignment_specifier(self, p: Any):
         return c_ast.Alignas(p[2], self._token_coord(p, 1))
@@ -1085,7 +1081,7 @@ class CParser(Parser):
     def type_qualifier_list_opt(self, p: Any):
         return p[0]
 
-    @_('parameter_list', 'parameter_list COMMA ELLIPSIS')
+    @_('parameter_list', 'parameter_list "," ELLIPSIS')
     def parameter_type_list(self, p: Any):
         if len(p) > 1:
             p.parameter_list.params.append(c_ast.EllipsisParam(self._token_coord(p, 3)))
@@ -1095,7 +1091,7 @@ class CParser(Parser):
     def parameter_type_list_opt(self, p: Any):
         return p[0]
 
-    @_('parameter_declaration { COMMA parameter_declaration }')
+    @_('parameter_declaration { "," parameter_declaration }')
     def parameter_list(self, p: Any):
         # single parameter
         return c_ast.ParamList([p.parameter_declaration0, *p.parameter_declaration1], p.parameter_declaration0.coord)
@@ -1152,7 +1148,7 @@ class CParser(Parser):
 
         return decl
 
-    @_('identifier { COMMA identifier }')
+    @_('identifier { "," identifier }')
     def identifier_list(self, p: Any):
         return c_ast.ParamList([p.identifier0, *p.identifier1], p.identifier0.coord)
 
@@ -1166,7 +1162,7 @@ class CParser(Parser):
 
     @_(
         'brace_open initializer_list_opt brace_close',
-        'brace_open initializer_list COMMA brace_close',
+        'brace_open initializer_list "," brace_close',
     )
     def initializer(self, p: Any):
         if p[1] is None:
@@ -1174,7 +1170,7 @@ class CParser(Parser):
         else:
             return p[1]
 
-    @_('designation_opt initializer { COMMA designation_opt initializer }')
+    @_('designation_opt initializer { "," designation_opt initializer }')
     def initializer_list(self, p: Any):
         init = p.designation_opt if p.initializer is None else c_ast.NamedInitializer(p.designation_opt, p.initializer)
         init_exprs = [init]
@@ -1202,7 +1198,7 @@ class CParser(Parser):
     def designator_list(self, p: Any):
         return [p.designator0, *p.designator1]
 
-    @_('LBRACKET constant_expression RBRACKET', 'PERIOD identifier')
+    @_('LBRACKET constant_expression RBRACKET', '"." identifier')
     def designator(self, p: Any):
         return p[1]
 
@@ -1318,15 +1314,15 @@ class CParser(Parser):
     def compound_statement(self, p: Any):
         return c_ast.Compound(block_items=p.block_item_list_opt, coord=self._token_coord(p, 1))
 
-    @_('ID COLON pragmacomp_or_statement')
+    @_('ID ":" pragmacomp_or_statement')
     def labeled_statement(self, p: Any):
         return c_ast.Label(p.ID, p.pragmacomp_or_statement, self._token_coord(p, 1))
 
-    @_('CASE constant_expression COLON pragmacomp_or_statement')
+    @_('CASE constant_expression ":" pragmacomp_or_statement')
     def labeled_statement(self, p: Any):
         return c_ast.Case(p.constant_expression, [p.pragmacomp_or_statement], self._token_coord(p, 1))
 
-    @_('DEFAULT COLON pragmacomp_or_statement')
+    @_('DEFAULT ":" pragmacomp_or_statement')
     def labeled_statement(self, p: Any):
         return c_ast.Default([p.pragmacomp_or_statement], self._token_coord(p, 1))
 
@@ -1346,39 +1342,39 @@ class CParser(Parser):
     def iteration_statement(self, p: Any):
         return c_ast.While(p.expression, p.pragmacomp_or_statement, self._token_coord(p, 1))
 
-    @_('DO pragmacomp_or_statement WHILE LPAREN expression RPAREN SEMI')
+    @_('DO pragmacomp_or_statement WHILE LPAREN expression RPAREN ";"')
     def iteration_statement(self, p: Any):
         return c_ast.DoWhile(p.expression, p.pragmacomp_or_statement, self._token_coord(p, 1))
 
-    @_('FOR LPAREN expression_opt SEMI expression_opt SEMI expression_opt RPAREN pragmacomp_or_statement')
+    @_('FOR LPAREN expression_opt ";" expression_opt ";" expression_opt RPAREN pragmacomp_or_statement')
     def iteration_statement(self, p: Any):
         return c_ast.For(p[2], p[4], p[6], p[8], self._token_coord(p, 1))
 
-    @_('FOR LPAREN declaration expression_opt SEMI expression_opt RPAREN pragmacomp_or_statement')
+    @_('FOR LPAREN declaration expression_opt ";" expression_opt RPAREN pragmacomp_or_statement')
     def iteration_statement(self, p: Any):
         return c_ast.For(c_ast.DeclList(p[2], self._token_coord(p, 1)), p[3], p[5], p[7], self._token_coord(p, 1))
 
-    @_('GOTO ID SEMI')
+    @_('GOTO ID ";"')
     def jump_statement(self, p: Any):
         return c_ast.Goto(p.ID, self._token_coord(p, 1))
 
-    @_('BREAK SEMI')
+    @_('BREAK ";"')
     def jump_statement(self, p: Any):
         return c_ast.Break(self._token_coord(p, 1))
 
-    @_('CONTINUE SEMI')
+    @_('CONTINUE ";"')
     def jump_statement(self, p: Any):
         return c_ast.Continue(self._token_coord(p, 1))
 
-    @_('RETURN expression SEMI')
+    @_('RETURN expression ";"')
     def jump_statement(self, p: Any):
         return c_ast.Return(p.expression, self._token_coord(p, 1))
 
-    @_('RETURN SEMI')
+    @_('RETURN ";"')
     def jump_statement(self, p: Any):
         return c_ast.Return(None, self._token_coord(p, 1))
 
-    @_('expression_opt SEMI')
+    @_('expression_opt ";"')
     def expression_statement(self, p: Any):
         if p.expression_opt is None:
             return c_ast.EmptyStatement(self._token_coord(p, 2))
@@ -1389,7 +1385,7 @@ class CParser(Parser):
     def expression(self, p: Any):
         return p.assignment_expression
 
-    @_('expression COMMA assignment_expression')
+    @_('expression "," assignment_expression')
     def expression(self, p: Any):
         if not isinstance(p.expression, c_ast.ExprList):
             p.expression = c_ast.ExprList([p.expression], p.expression.coord)
@@ -1456,7 +1452,7 @@ class CParser(Parser):
     def conditional_expression(self, p: Any):
         return p.binary_expression
 
-    @_('binary_expression CONDOP expression COLON conditional_expression')
+    @_('binary_expression CONDOP expression ":" conditional_expression')
     def conditional_expression(self, p: Any):
         return c_ast.TernaryOp(p.binary_expression, p.expression, p.conditional_expression, p.binary_expression.coord)
 
@@ -1507,7 +1503,7 @@ class CParser(Parser):
     def unary_expression(self, p: Any):
         return c_ast.UnaryOp(p[0], p[1], self._token_coord(p, 1))
 
-    @_('SIZEOF LPAREN type_name RPAREN', '_ALIGNOF LPAREN type_name RPAREN')
+    @_('SIZEOF LPAREN type_name RPAREN', 'ALIGNOF_ LPAREN type_name RPAREN')
     def unary_expression(self, p: Any):
         return c_ast.UnaryOp(p[0], p[2], self._token_coord(p, 1))
 
@@ -1528,8 +1524,8 @@ class CParser(Parser):
         return c_ast.FuncCall(p.postfix_expression, p.argument_expression_list, p.postfix_expression.coord)
 
     @_(
-        'postfix_expression PERIOD ID',
-        'postfix_expression PERIOD TYPEID',
+        'postfix_expression "." ID',
+        'postfix_expression "." TYPEID',
         'postfix_expression ARROW ID',
         'postfix_expression ARROW TYPEID',
     )
@@ -1541,7 +1537,7 @@ class CParser(Parser):
     def postfix_expression(self, p: Any):
         return c_ast.UnaryOp('p' + p[1], p.postfix_expression, p[1].coord)
 
-    @_('LPAREN type_name RPAREN brace_open initializer_list [ COMMA ] brace_close')
+    @_('LPAREN type_name RPAREN brace_open initializer_list [ "," ] brace_close')
     def postfix_expression(self, p: Any):
         return c_ast.CompoundLiteral(p.type_name, p.initializer_list)
 
@@ -1553,7 +1549,7 @@ class CParser(Parser):
     def primary_expression(self, p: Any):
         return p.expression
 
-    @_('OFFSETOF LPAREN type_name COMMA offsetof_member_designator RPAREN')
+    @_('OFFSETOF LPAREN type_name "," offsetof_member_designator RPAREN')
     def primary_expression(self, p: Any):
         coord = self._token_coord(p, 1)
         return c_ast.FuncCall(
@@ -1566,15 +1562,15 @@ class CParser(Parser):
     def offsetof_member_designator(self, p: Any):
         return p.identifier
 
-    @_('offsetof_member_designator PERIOD identifier')
+    @_('offsetof_member_designator "." identifier')
     def offsetof_member_designator(self, p: Any):
-        return c_ast.StructRef(p.offsetof_member_designator, p.PERIOD, p.identifer, p.offsetof_member_designator.coord)
+        return c_ast.StructRef(p.offsetof_member_designator, p[1], p.identifer, p.offsetof_member_designator.coord)
 
     @_('offsetof_member_designator LBRACKET expression RBRACKET')
     def offsetof_member_designator(self, p: Any):
         return c_ast.ArrayRef(p.offsetof_member_designator, p.expression, p.offsetof_member_designator.coord)
 
-    @_('assignment_expression { COMMA assignment_expression }')
+    @_('assignment_expression { "," assignment_expression }')
     def argument_expression_list(self, p: Any):
         return c_ast.ExprList([p.assignment_expression0, *p.assignment_expression1], p.assignment_expression.coord)
 
