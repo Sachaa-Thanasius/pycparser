@@ -2,6 +2,7 @@
 # ruff: noqa: ANN201, F811, S105, RET505
 from __future__ import annotations
 
+import itertools
 from typing import TYPE_CHECKING, Any
 
 from pycparser import c_ast
@@ -180,23 +181,15 @@ class CParser(Parser):
         ('left', TIMES, DIVIDE, MOD),
     )
 
-    @_('translation_unit')
-    def optional_translation_unit(self, p: Any):
-        return c_ast.FileAST(p.translation_unit)
+    # ==== Grammar productions
+    # Implementation of the BNF defined in K&R2 A.13
 
-    @_('empty')
-    def optional_translation_unit(self, p: Any):
-        return c_ast.FileAST([])
-
-    @_('external_declaration')
+    # Wrapper around a translation unit, to allow for empty input.
+    # Not strictly part of the C99 Grammar, but useful in practice.
+    @_('{ external_declaration }')
     def translation_unit(self, p: Any):
         # Note: external_declaration is already a list
-        return p.external_declaration
-
-    @_('translation_unit external_declaration')
-    def translation_unit(self, p: Any):
-        p.translation_unit.extend(p.external_declaration)
-        return p.translation_unit
+        return c_ast.FileAST([e for ext_decl in p.external_declaration for e in ext_decl])
 
     # Declarations always come as lists (because they can be
     # several in one line), so we wrap the function definition
@@ -253,32 +246,24 @@ class CParser(Parser):
 
     # In function definitions, the declarator can be followed by
     # a declaration list, for old "K&R style" function definitios.
-    @_('id_declarator declaration_list_opt compound_statement')
+    @_('[ declaration_specifiers ] id_declarator { declaration } compound_statement')
     def function_definition(self, p: Any):
-        # no declaration specifiers - 'int' becomes the default type
-        spec = {
-            "qual": [],
-            "alignment": [],
-            "storage": [],
-            "type": [c_ast.IdentifierType(['int'], coord=self._token_coord(p, 1))],
-            "function": [],
-        }
+        if p.declaration_specifiers:
+            spec = p.declaration_specifiers
+        else:
+            # no declaration specifiers - 'int' becomes the default type
+            spec = {
+                "qual": [],
+                "alignment": [],
+                "storage": [],
+                "type": [c_ast.IdentifierType(['int'], coord=self._token_coord(p, 1))],
+                "function": [],
+            }
 
         return self._build_function_definition(
             spec=spec,
             decl=p.id_declarator,
-            param_decls=p.declaration_list_opt,
-            body=p.compound_statement,
-        )
-
-    @_('declaration_specifiers id_declarator declaration_list_opt compound_statement')
-    def function_definition(self, p: Any):
-        spec = p.declaration_specifiers
-
-        return self._build_function_definition(
-            spec=spec,
-            decl=p.id_declarator,
-            param_decls=p.declaration_list_opt,
+            param_decls=[decl for decl_list in p.declaration for decl in decl_list],
             body=p.compound_statement,
         )
 
@@ -346,7 +331,7 @@ class CParser(Parser):
     @_('pppragma_directive_list statement')
     def pragmacomp_or_statement(self, p: Any):
         return c_ast.Compound(
-            block_items=p[1] + [p[2]],
+            block_items=p[0] + [p[1]],
             coord=self._token_coord(p, 1),
         )
 
@@ -364,15 +349,15 @@ class CParser(Parser):
     # of Decl nodes, even if it's one element long.
     #
     @_(
-        'declaration_specifiers init_declarator_list_opt',
-        'declaration_specifiers_no_type id_init_declarator_list_opt',
+        'declaration_specifiers [ init_declarator_list ]',
+        'declaration_specifiers_no_type [ id_init_declarator_list ]',
     )
     def decl_body(self, p: Any):
         spec = p[0]
 
-        # p[2] (init_declarator_list_opt) is either a list or None
+        # p[1] is either a list or None
         #
-        if p.init_declarator_list_opt is None:
+        if p[1] is None:
             # By the standard, you must have at least one declarator unless
             # declaring a structure tag, a union tag, or the members of an
             # enumeration.
@@ -405,7 +390,7 @@ class CParser(Parser):
                 )
 
         else:
-            decls = self._build_declarations(spec=spec, decls=p.init_declarator_list_opt, typedef_namespace=True)
+            decls = self._build_declarations(spec=spec, decls=p[1], typedef_namespace=True)
 
         return decls
 
@@ -428,68 +413,52 @@ class CParser(Parser):
     def declaration(self, p: Any):
         return p.decl_body
 
-    # Since each declaration is a list of declarations, this
-    # rule will combine all the declarations and return a single
-    # list
-    #
-    @_('declaration { declaration }')
-    def declaration_list(self, p: Any):
-        return p.declaration0 + p.declaration1
-
-    @_('empty', 'declaration_list')
-    def declaration_list_opt(self, p: Any):
-        return p[0]
-
     # To know when declaration-specifiers end and declarators begin,
     # we require declaration-specifiers to have at least one
     # type-specifier, and disallow typedef-names after we've seen any
     # type-specifier. These are both required by the spec.
     #
-    @_('type_qualifier declaration_specifiers_no_type_opt')
+    @_('type_qualifier [ declaration_specifiers_no_type ]')
     def declaration_specifiers_no_type(self, p: Any):
         return self._add_declaration_specifier(
-            p.declaration_specifiers_no_type_opt,
+            p.declaration_specifiers_no_type,
             p.type_qualifier,
             'qual',
         )
 
-    @_('storage_class_specifier declaration_specifiers_no_type_opt')
+    @_('storage_class_specifier [ declaration_specifiers_no_type ]')
     def declaration_specifiers_no_type(self, p: Any):
         return self._add_declaration_specifier(
-            p.declaration_specifiers_no_type_opt,
+            p.declaration_specifiers_no_type,
             p.storage_class_specifier,
             'storage',
         )
 
-    @_('function_specifier declaration_specifiers_no_type_opt')
+    @_('function_specifier [ declaration_specifiers_no_type ]')
     def declaration_specifiers_no_type(self, p: Any):
         return self._add_declaration_specifier(
-            p.declaration_specifiers_no_type_opt,
+            p.declaration_specifiers_no_type,
             p.function_specifier,
             'function',
         )
 
     # Without this, `typedef _Atomic(T) U` will parse incorrectly because the
     # _Atomic qualifier will match, instead of the specifier.
-    @_('atomic_specifier declaration_specifiers_no_type_opt')
+    @_('atomic_specifier [ declaration_specifiers_no_type ]')
     def declaration_specifiers_no_type(self, p: Any):
         return self._add_declaration_specifier(
-            p.declaration_specifiers_no_type_opt,
+            p.declaration_specifiers_no_type,
             p.atomic_specifier,
             'type',
         )
 
-    @_('alignment_specifier declaration_specifiers_no_type_opt')
+    @_('alignment_specifier [ declaration_specifiers_no_type ]')
     def declaration_specifiers_no_type(self, p: Any):
         return self._add_declaration_specifier(
-            p.declaration_specifiers_no_type_opt,
+            p.declaration_specifiers_no_type,
             p.alignment_specifier,
             'alignment',
         )
-
-    @_('empty', 'declaration_specifiers_no_type')
-    def declaration_specifiers_no_type_opt(self, p: Any):
-        return p[0]
 
     @_('declaration_specifiers type_qualifier')
     def declaration_specifiers(self, p: Any):
@@ -578,10 +547,6 @@ class CParser(Parser):
     def init_declarator_list(self, p: Any):
         return [p.init_declarator0, *p.init_declarator1]
 
-    @_('empty', 'init_declarator_list')
-    def init_declarator_list_opt(self, p: Any):
-        return p[0]
-
     # Returns a {decl=<declarator> : init=<initializer>} dictionary
     # If there's no initializer, uses None
     #
@@ -589,17 +554,9 @@ class CParser(Parser):
     def init_declarator(self, p: Any):
         return {"decl": p.declarator, "init": p.initializer}
 
-    @_('id_init_declarator')
+    @_('id_init_declarator { "," init_declarator }')
     def id_init_declarator_list(self, p: Any):
-        return [p.id_init_declarator]
-
-    @_('id_init_declarator_list "," init_declarator')
-    def id_init_declarator_list(self, p: Any):
-        return [*p.id_init_declarator_list, p.init_declarator]
-
-    @_('empty', 'id_init_declarator_list')
-    def id_init_declarator_list_opt(self, p: Any):
-        return p[0]
+        return [p.id_init_declarator0, *p.init_declarator1]
 
     @_('id_declarator [ EQUALS initializer ]')
     def id_init_declarator(self, p: Any) -> dict[str, Any]:
@@ -651,38 +608,32 @@ class CParser(Parser):
         # None means no list of members
         return klass(name=p[1], decls=None, coord=self._token_coord(p, 2))
 
-    @_('struct_or_union brace_open [ struct_declaration_list ] brace_close')
+    @_('struct_or_union brace_open struct_declaration { struct_declaration } brace_close')
     def struct_or_union_specifier(self, p: Any):
         klass = self._select_struct_union_class(p.struct_or_union)
         # Empty sequence means an empty list of members
-        return klass(name=None, decls=p.struct_declaration_list or [], coord=self._token_coord(p, 2))
+        return klass(name=None, decls=[p.struct_declaration0, *p.struct_declaration1], coord=self._token_coord(p, 2))
 
     @_(
-        'struct_or_union ID brace_open [ struct_declaration_list ] brace_close',
-        'struct_or_union TYPEID brace_open [ struct_declaration_list ] brace_close',
+        'struct_or_union ID brace_open struct_declaration { struct_declaration } brace_close',
+        'struct_or_union TYPEID brace_open struct_declaration { struct_declaration } brace_close',
     )
     def struct_or_union_specifier(self, p: Any):
         klass = self._select_struct_union_class(p.struct_or_union)
         # Empty sequence means an empty list of members
-        return klass(name=p[1], decls=p.struct_declaration_list or [], coord=self._token_coord(p, 2))
+        return klass(name=p[1], decls=[p.struct_declaration0, *p.struct_declaration1], coord=self._token_coord(p, 2))
 
     @_('STRUCT', 'UNION')
     def struct_or_union(self, p: Any):
         return p[0]
 
-    # Combine all declarations into a single list
-    #
-    @_('struct_declaration { struct_declaration }')
-    def struct_declaration_list(self, p: Any):
-        return p.struct_declaration0 + (p.struct_declaration1 or [])
-
-    @_('specifier_qualifier_list struct_declarator_list_opt ";"')
+    @_('specifier_qualifier_list [ struct_declarator_list ] ";"')
     def struct_declaration(self, p: Any):
         spec = p.specifier_qualifier_list
         assert 'typedef' not in spec['storage']
 
-        if p.struct_declarator_list_opt is not None:
-            decls = self._build_declarations(spec=spec, decls=p.struct_declarator_list_opt)
+        if p.struct_declarator_list is not None:
+            decls = self._build_declarations(spec=spec, decls=p.struct_declarator_list)
 
         elif len(spec['type']) == 1:
             # Anonymous struct/union, gcc extension, C1x feature.
@@ -718,10 +669,6 @@ class CParser(Parser):
     @_('struct_declarator { "," struct_declarator }')
     def struct_declarator_list(self, p: Any):
         return [p.struct_declarator0, *p.struct_declarator1]
-
-    @_('empty', 'struct_declarator_list')
-    def struct_declarator_list_opt(self, p: Any):
-        return p[0]
 
     # struct_declarator passes up a dict with the keys: decl (for
     # the underlying declarator) and bitsize (for the bitsize)
@@ -783,6 +730,8 @@ class CParser(Parser):
     def declarator(self, p: Any):
         return p[0]
 
+    # ===============================================================================================
+
     @_('direct_id_declarator')
     def id_declarator(self, p: Any):
         return p.direct_id_declarator
@@ -817,22 +766,23 @@ class CParser(Parser):
     def direct_id_declarator(self, p: Any):
         return p[1]
 
-    @_('direct_id_declarator LBRACKET type_qualifier_list_opt assignment_expression_opt RBRACKET')
+    @_('direct_id_declarator LBRACKET [ type_qualifier_list ] [ assignment_expression ] RBRACKET')
     def direct_id_declarator(self, p: Any):
-        quals: list[Any] = (p.type_qualifier_list_opt if len(p) > 4 else []) or []
+        if p.assignment_expression:
+            dim = p.type_qualifier_list
+            dim_quals: list[Any] = []
+        else:
+            dim = p.assignment_expression
+            dim_quals = p.type_qualifier_list or []
+
         # Accept dimension qualifiers
         # Per C99 6.7.5.3 p7
-        arr = c_ast.ArrayDecl(
-            type=None,
-            dim=p[3] if len(p) > 4 else p[2],
-            dim_quals=quals,
-            coord=p[0].coord,
-        )
+        arr = c_ast.ArrayDecl(type=None, dim=dim, dim_quals=dim_quals, coord=p[0].coord)
 
         return self._type_modify_decl(decl=p[0], modifier=arr)
 
     @_(
-        'direct_id_declarator LBRACKET STATIC type_qualifier_list_opt assignment_expression RBRACKET',
+        'direct_id_declarator LBRACKET STATIC [ type_qualifier_list ] assignment_expression RBRACKET',
         'direct_id_declarator LBRACKET type_qualifier_list STATIC assignment_expression RBRACKET',
     )
     def direct_id_declarator(self, p: Any):
@@ -849,12 +799,12 @@ class CParser(Parser):
 
     # Special for VLAs
     #
-    @_('direct_id_declarator LBRACKET type_qualifier_list_opt TIMES RBRACKET')
+    @_('direct_id_declarator LBRACKET [ type_qualifier_list ] TIMES RBRACKET')
     def direct_id_declarator(self, p: Any):
         arr = c_ast.ArrayDecl(
             type=None,
             dim=c_ast.ID(p.TIMES, self._token_coord(p, 4)),
-            dim_quals=p.type_qualifier_list_opt if p.type_qualifier_list_opt is not None else [],
+            dim_quals=p.type_qualifier_list if p.type_qualifier_list is not None else [],
             coord=p[0].coord,
         )
 
@@ -862,7 +812,7 @@ class CParser(Parser):
 
     @_(
         'direct_id_declarator LPAREN parameter_type_list RPAREN',
-        'direct_id_declarator LPAREN identifier_list_opt RPAREN',
+        'direct_id_declarator LPAREN [ identifier_list ] RPAREN',
     )
     def direct_id_declarator(self, p: Any):
         func = c_ast.FuncDecl(args=p[2], type=None, coord=p[0].coord)
@@ -896,22 +846,23 @@ class CParser(Parser):
     def direct_typeid_declarator(self, p: Any):
         return p[1]
 
-    @_('direct_typeid_declarator LBRACKET type_qualifier_list_opt assignment_expression_opt RBRACKET')
+    @_('direct_typeid_declarator LBRACKET [ type_qualifier_list ] [ assignment_expression ] RBRACKET')
     def direct_typeid_declarator(self, p: Any):
-        quals: list[Any] = (p.type_qualifier_list_opt if len(p) > 4 else []) or []
+        if p.assignment_expression:
+            dim = p.type_qualifier_list
+            dim_quals: list[Any] = []
+        else:
+            dim = p.assignment_expression
+            dim_quals = p.type_qualifier_list or []
+
         # Accept dimension qualifiers
         # Per C99 6.7.5.3 p7
-        arr = c_ast.ArrayDecl(
-            type=None,
-            dim=p[3] if len(p) > 4 else p[2],
-            dim_quals=quals,
-            coord=p[0].coord,
-        )
+        arr = c_ast.ArrayDecl(type=None, dim=dim, dim_quals=dim_quals, coord=p[0].coord)
 
         return self._type_modify_decl(decl=p[0], modifier=arr)
 
     @_(
-        'direct_typeid_declarator LBRACKET STATIC type_qualifier_list_opt assignment_expression RBRACKET',
+        'direct_typeid_declarator LBRACKET STATIC [ type_qualifier_list ] assignment_expression RBRACKET',
         'direct_typeid_declarator LBRACKET type_qualifier_list STATIC assignment_expression RBRACKET',
     )
     def direct_typeid_declarator(self, p: Any):
@@ -928,12 +879,12 @@ class CParser(Parser):
 
     # Special for VLAs
     #
-    @_('direct_typeid_declarator LBRACKET type_qualifier_list_opt TIMES RBRACKET')
+    @_('direct_typeid_declarator LBRACKET [ type_qualifier_list ] TIMES RBRACKET')
     def direct_typeid_declarator(self, p: Any):
         arr = c_ast.ArrayDecl(
             type=None,
             dim=c_ast.ID(p.TIMES, self._token_coord(p, 4)),
-            dim_quals=p.type_qualifier_list_opt if p.type_qualifier_list_opt is not None else [],
+            dim_quals=p.type_qualifier_list if p.type_qualifier_list is not None else [],
             coord=p[0].coord,
         )
 
@@ -941,7 +892,7 @@ class CParser(Parser):
 
     @_(
         'direct_typeid_declarator LPAREN parameter_type_list RPAREN',
-        'direct_typeid_declarator LPAREN identifier_list_opt RPAREN',
+        'direct_typeid_declarator LPAREN [ identifier_list ] RPAREN',
     )
     def direct_typeid_declarator(self, p: Any):
         func = c_ast.FuncDecl(args=p[2], type=None, coord=p[0].coord)
@@ -971,22 +922,23 @@ class CParser(Parser):
     def direct_typeid_noparen_declarator(self, p: Any):
         return c_ast.TypeDecl(declname=p[0], type=None, quals=None, align=None, coord=self._token_coord(p, 1))
 
-    @_('direct_typeid_noparen_declarator LBRACKET type_qualifier_list_opt assignment_expression_opt RBRACKET')
+    @_('direct_typeid_noparen_declarator LBRACKET [ type_qualifier_list ] [ assignment_expression ] RBRACKET')
     def direct_typeid_noparen_declarator(self, p: Any):
-        quals: list[Any] = (p.type_qualifier_list_opt if len(p) > 4 else []) or []
+        if p.assignment_expression:
+            dim = p.type_qualifier_list
+            dim_quals: list[Any] = []
+        else:
+            dim = p.assignment_expression
+            dim_quals = p.type_qualifier_list or []
+
         # Accept dimension qualifiers
         # Per C99 6.7.5.3 p7
-        arr = c_ast.ArrayDecl(
-            type=None,
-            dim=p[3] if len(p) > 4 else p[2],
-            dim_quals=quals,
-            coord=p[0].coord,
-        )
+        arr = c_ast.ArrayDecl(type=None, dim=dim, dim_quals=dim_quals, coord=p[0].coord)
 
         return self._type_modify_decl(decl=p[0], modifier=arr)
 
     @_(
-        'direct_typeid_noparen_declarator LBRACKET STATIC type_qualifier_list_opt assignment_expression RBRACKET',
+        'direct_typeid_noparen_declarator LBRACKET STATIC [ type_qualifier_list ] assignment_expression RBRACKET',
         'direct_typeid_noparen_declarator LBRACKET type_qualifier_list STATIC assignment_expression RBRACKET',
     )
     def direct_typeid_noparen_declarator(self, p: Any):
@@ -1003,12 +955,12 @@ class CParser(Parser):
 
     # Special for VLAs
     #
-    @_('direct_typeid_noparen_declarator LBRACKET type_qualifier_list_opt TIMES RBRACKET')
+    @_('direct_typeid_noparen_declarator LBRACKET [ type_qualifier_list ] TIMES RBRACKET')
     def direct_typeid_noparen_declarator(self, p: Any):
         arr = c_ast.ArrayDecl(
             type=None,
             dim=c_ast.ID(p.TIMES, self._token_coord(p, 4)),
-            dim_quals=p.type_qualifier_list_opt if p.type_qualifier_list_opt is not None else [],
+            dim_quals=p.type_qualifier_list if p.type_qualifier_list is not None else [],
             coord=p[0].coord,
         )
 
@@ -1016,7 +968,7 @@ class CParser(Parser):
 
     @_(
         'direct_typeid_noparen_declarator LPAREN parameter_type_list RPAREN',
-        'direct_typeid_noparen_declarator LPAREN identifier_list_opt RPAREN',
+        'direct_typeid_noparen_declarator LPAREN [ identifier_list ] RPAREN',
     )
     def direct_typeid_noparen_declarator(self, p: Any):
         func = c_ast.FuncDecl(args=p[2], type=None, coord=p[0].coord)
@@ -1042,10 +994,7 @@ class CParser(Parser):
 
     # ===============================================================================================
 
-    @_(
-        'TIMES type_qualifier_list_opt',
-        'TIMES type_qualifier_list_opt pointer',
-    )
+    @_('TIMES [ type_qualifier_list ] [ pointer ]')
     def pointer(self, p: Any):
         coord = self._token_coord(p, 1)
         # Pointer decls nest from inside out. This is important when different
@@ -1063,13 +1012,14 @@ class CParser(Parser):
         #
         # So when we construct PtrDecl nestings, the leftmost pointer goes in
         # as the most nested type.
-        nested_type = c_ast.PtrDecl(quals=p[1] or [], type=None, coord=coord)
-        if len(p) > 2:
-            tail_type = p[2]
+        nested_type = c_ast.PtrDecl(quals=p.type_qualifier_list or [], type=None, coord=coord)
+
+        if p.pointer is not None:
+            tail_type = p.pointer
             while tail_type.type is not None:
                 tail_type = tail_type.type
             tail_type.type = nested_type
-            return p[2]
+            return p.pointer
         else:
             return nested_type
 
@@ -1077,19 +1027,11 @@ class CParser(Parser):
     def type_qualifier_list(self, p: Any):
         return [*p.type_qualifier0, p.type_qualifier1]
 
-    @_('empty', 'type_qualifier_list')
-    def type_qualifier_list_opt(self, p: Any):
-        return p[0]
-
     @_('parameter_list', 'parameter_list "," ELLIPSIS')
     def parameter_type_list(self, p: Any):
         if len(p) > 1:
             p.parameter_list.params.append(c_ast.EllipsisParam(self._token_coord(p, 3)))
         return p.parameter_list
-
-    @_('empty', 'parameter_type_list')
-    def parameter_type_list_opt(self, p: Any):
-        return p[0]
 
     @_('parameter_declaration { "," parameter_declaration }')
     def parameter_list(self, p: Any):
@@ -1116,7 +1058,7 @@ class CParser(Parser):
             spec['type'] = [c_ast.IdentifierType(['int'], coord=self._token_coord(p, 1))]
         return self._build_declarations(spec=spec, decls=[{"decl": p[1]}])[0]
 
-    @_('declaration_specifiers abstract_declarator_opt')
+    @_('declaration_specifiers [ abstract_declarator ]')
     def parameter_declaration(self, p: Any):
         spec = p.declaration_specifiers
         if not spec['type']:
@@ -1131,7 +1073,7 @@ class CParser(Parser):
             and len(spec['type'][-1].names) == 1
             and self._is_type_in_scope(spec['type'][-1].names[0])
         ):
-            decl = self._build_declarations(spec=spec, decls=[{"decl": p.abstract_declarator_opt, "init": None}])[0]
+            decl = self._build_declarations(spec=spec, decls=[{"decl": p.abstract_declarator, "init": None}])[0]
 
         # This truly is an old-style parameter declaration
         #
@@ -1140,7 +1082,7 @@ class CParser(Parser):
                 name='',
                 quals=spec['qual'],
                 align=None,
-                type=p.abstract_declarator_opt or c_ast.TypeDecl(None, None, None, None),
+                type=p.abstract_declarator or c_ast.TypeDecl(None, None, None, None),
                 coord=self._token_coord(p, 2),
             )
             typename = spec['type']
@@ -1152,44 +1094,31 @@ class CParser(Parser):
     def identifier_list(self, p: Any):
         return c_ast.ParamList([p.identifier0, *p.identifier1], p.identifier0.coord)
 
-    @_('empty', 'identifier_list')
-    def identifier_list_opt(self, p: Any):
-        return p[0]
-
     @_('assignment_expression')
     def initializer(self, p: Any):
         return p.assignment_expression
 
     @_(
-        'brace_open initializer_list_opt brace_close',
+        'brace_open [ initializer_list ] brace_close',
         'brace_open initializer_list "," brace_close',
     )
     def initializer(self, p: Any):
-        if p[1] is None:
+        if p.initializer_list is None:
             return c_ast.InitList([], self._token_coord(p, 1))
         else:
-            return p[1]
+            return p.initializer_list
 
-    @_('designation_opt initializer { "," designation_opt initializer }')
+    @_('[ designation ] initializer { "," [ designation ] initializer }')
     def initializer_list(self, p: Any):
-        init = p.designation_opt if p.initializer is None else c_ast.NamedInitializer(p.designation_opt, p.initializer)
-        init_exprs = [init]
-        for _, extra_des, extra_init in p[2]:
-            extra_named_init = extra_init if extra_des is None else c_ast.NamedInitializer(extra_des, extra_init)
-            init_exprs.append(extra_named_init)
-        return c_ast.InitList(init_exprs, p.initializer.coord)
-
-    @_('empty', 'initializer_list')
-    def initializer_list_opt(self, p: Any):
-        return p[0]
+        init_exprs = [
+            c_ast.NamedInitializer(des, init) if des else init
+            for des, init in ((p[0], p[1]), *((extra_des, extra_init) for _, extra_des, extra_init in p[2]))
+        ]
+        return c_ast.InitList(init_exprs, p.initializer0.coord)
 
     @_('designator_list EQUALS')
     def designation(self, p: Any):
         return p.designator_list
-
-    @_('empty', 'designation')
-    def designation_opt(self, p: Any):
-        return p[0]
 
     # Designators are represented as a list of nodes, in the order in which
     # they're written in the code.
@@ -1202,13 +1131,13 @@ class CParser(Parser):
     def designator(self, p: Any):
         return p[1]
 
-    @_('specifier_qualifier_list abstract_declarator_opt')
+    @_('specifier_qualifier_list [ abstract_declarator ]')
     def type_name(self, p: Any):
         typename = c_ast.Typename(
             name='',
             quals=p.specifier_qualifier_list['qual'][:],
             align=None,
-            type=p.abstract_declarator_opt or c_ast.TypeDecl(None, None, None, None),
+            type=p.abstract_declarator or c_ast.TypeDecl(None, None, None, None),
             coord=self._token_coord(p, 2),
         )
 
@@ -1227,10 +1156,6 @@ class CParser(Parser):
     def abstract_declarator(self, p: Any):
         return p.direct_abstract_declarator
 
-    @_('empty', 'abstract_declarator')
-    def abstract_declarator_opt(self, p: Any):
-        return p[0]
-
     # Creating and using direct_abstract_declarator_opt here
     # instead of listing both direct_abstract_declarator and the
     # lack of it in the beginning of _1 and _2 caused two
@@ -1240,23 +1165,28 @@ class CParser(Parser):
     def direct_abstract_declarator(self, p: Any):
         return p.abstract_declarator
 
-    @_('direct_abstract_declarator LBRACKET assignment_expression_opt RBRACKET')
+    @_('direct_abstract_declarator LBRACKET [ assignment_expression ] RBRACKET')
     def direct_abstract_declarator(self, p: Any):
         arr = c_ast.ArrayDecl(
-            type=None, dim=p.assignment_expression_opt, dim_quals=[], coord=p.direct_abstract_declarator.coord
+            type=None,
+            dim=p.assignment_expression,
+            dim_quals=[],
+            coord=p.direct_abstract_declarator.coord,
         )
 
         return self._type_modify_decl(decl=p.direct_abstract_declarator, modifier=arr)
 
-    @_('LBRACKET type_qualifier_list_opt assignment_expression_opt RBRACKET')
+    @_('LBRACKET [ type_qualifier_list ] [ assignment_expression ] RBRACKET')
     def direct_abstract_declarator(self, p: Any):
-        quals: list[Any] = (p[1] if len(p) > 3 else []) or []
-        return c_ast.ArrayDecl(
-            type=c_ast.TypeDecl(None, None, None, None),
-            dim=p[2] if len(p) > 3 else p[1],
-            dim_quals=quals,
-            coord=self._token_coord(p, 1),
-        )
+        if p.assignment_expression:
+            dim = p.type_qualifier_list
+            dim_quals: list[Any] = []
+        else:
+            dim = p.assignment_expression
+            dim_quals = p.type_qualifier_list or []
+
+        type_ = c_ast.TypeDecl(None, None, None, None)
+        return c_ast.ArrayDecl(type=type_, dim=dim, dim_quals=dim_quals, coord=self._token_coord(p, 1))
 
     @_('direct_abstract_declarator LBRACKET TIMES RBRACKET')
     def direct_abstract_declarator(self, p: Any):
@@ -1278,15 +1208,15 @@ class CParser(Parser):
             coord=self._token_coord(p, 1),
         )
 
-    @_('direct_abstract_declarator LPAREN parameter_type_list_opt RPAREN')
+    @_('direct_abstract_declarator LPAREN [ parameter_type_list ] RPAREN')
     def direct_abstract_declarator(self, p: Any):
-        func = c_ast.FuncDecl(args=p.parameter_type_list_opt, type=None, coord=p.direct_abstract_declarator.coord)
+        func = c_ast.FuncDecl(args=p.parameter_type_list, type=None, coord=p.direct_abstract_declarator.coord)
         return self._type_modify_decl(decl=p.direct_abstract_declarator, modifier=func)
 
-    @_('LPAREN parameter_type_list_opt RPAREN')
+    @_('LPAREN [ parameter_type_list ] RPAREN')
     def direct_abstract_declarator(self, p: Any):
         return c_ast.FuncDecl(
-            args=p.parameter_type_list_opt,
+            args=p.parameter_type_list,
             type=c_ast.TypeDecl(None, None, None, None),
             coord=self._token_coord(p, 1),
         )
@@ -1297,22 +1227,21 @@ class CParser(Parser):
     @_('declaration', 'statement')
     def block_item(self, p: Any) -> list[Any]:
         item = p[0]
-        return item if isinstance(item, list) else [item]
+        if isinstance(item, list):
+            return item
+        else:
+            return [item]
 
     # Since we made block_item a list, this just combines lists
     #
-    @_('block_item', 'block_item_list block_item')
+    @_('block_item { block_item }')
     def block_item_list(self, p: Any):
         # Empty block items (plain ';') produce [None], so ignore them
-        return p[0] if (len(p) == 1 or p[1] == [None]) else (p[0] + p[1])
+        return [item for item in itertools.chain(p.block_item0, *p.block_item1) if item is not None]
 
-    @_('empty', 'block_item_list')
-    def block_item_list_opt(self, p: Any):
-        return p[0]
-
-    @_('brace_open block_item_list_opt brace_close')
+    @_('brace_open [ block_item_list ] brace_close')
     def compound_statement(self, p: Any):
-        return c_ast.Compound(block_items=p.block_item_list_opt, coord=self._token_coord(p, 1))
+        return c_ast.Compound(block_items=p.block_item_list, coord=self._token_coord(p, 1))
 
     @_('ID ":" pragmacomp_or_statement')
     def labeled_statement(self, p: Any):
@@ -1346,11 +1275,11 @@ class CParser(Parser):
     def iteration_statement(self, p: Any):
         return c_ast.DoWhile(p.expression, p.pragmacomp_or_statement, self._token_coord(p, 1))
 
-    @_('FOR LPAREN expression_opt ";" expression_opt ";" expression_opt RPAREN pragmacomp_or_statement')
+    @_('FOR LPAREN [ expression ] ";" [ expression ] ";" [ expression ] RPAREN pragmacomp_or_statement')
     def iteration_statement(self, p: Any):
         return c_ast.For(p[2], p[4], p[6], p[8], self._token_coord(p, 1))
 
-    @_('FOR LPAREN declaration expression_opt ";" expression_opt RPAREN pragmacomp_or_statement')
+    @_('FOR LPAREN declaration [ expression ] ";" [ expression ] RPAREN pragmacomp_or_statement')
     def iteration_statement(self, p: Any):
         return c_ast.For(c_ast.DeclList(p[2], self._token_coord(p, 1)), p[3], p[5], p[7], self._token_coord(p, 1))
 
@@ -1374,12 +1303,12 @@ class CParser(Parser):
     def jump_statement(self, p: Any):
         return c_ast.Return(None, self._token_coord(p, 1))
 
-    @_('expression_opt ";"')
+    @_('[ expression ] ";"')
     def expression_statement(self, p: Any):
-        if p.expression_opt is None:
+        if p.expression is None:
             return c_ast.EmptyStatement(self._token_coord(p, 2))
         else:
-            return p.expression_opt
+            return p.expression
 
     @_('assignment_expression')
     def expression(self, p: Any):
@@ -1392,10 +1321,6 @@ class CParser(Parser):
 
         p.expression.exprs.append(p.assignment_expression)
         return p.expression
-
-    @_('empty', 'expression')
-    def expression_opt(self, p: Any):
-        return p[0]
 
     @_('TYPEID')
     def typedef_name(self, p: Any):
@@ -1418,10 +1343,6 @@ class CParser(Parser):
             p.assignment_expression,
             p.assignment_operator.coord,
         )
-
-    @_('empty', 'assignment_expression')
-    def assignment_expression_opt(self, p: Any):
-        return p[0]
 
     # K&R2 defines these as many separate rules, to encode
     # precedence and associativity. Why work hard ? I'll just use
@@ -1519,9 +1440,10 @@ class CParser(Parser):
     def postfix_expression(self, p: Any):
         return c_ast.ArrayRef(p.postfix_expression, p.expression, p.postfix_expression.coord)
 
-    @_('postfix_expression LPAREN [ argument_expression_list ] RPAREN')
+    @_('postfix_expression LPAREN assignment_expression { "," assignment_expression } RPAREN')
     def postfix_expression(self, p: Any):
-        return c_ast.FuncCall(p.postfix_expression, p.argument_expression_list, p.postfix_expression.coord)
+        arg_expr = c_ast.ExprList([p.assignment_expression0, *p.assignment_expression1], p.assignment_expression0.coord)
+        return c_ast.FuncCall(p.postfix_expression, arg_expr, p.postfix_expression.coord)
 
     @_(
         'postfix_expression "." ID',
@@ -1569,10 +1491,6 @@ class CParser(Parser):
     @_('offsetof_member_designator LBRACKET expression RBRACKET')
     def offsetof_member_designator(self, p: Any):
         return c_ast.ArrayRef(p.offsetof_member_designator, p.expression, p.offsetof_member_designator.coord)
-
-    @_('assignment_expression { "," assignment_expression }')
-    def argument_expression_list(self, p: Any):
-        return c_ast.ExprList([p.assignment_expression0, *p.assignment_expression1], p.assignment_expression.coord)
 
     @_('ID')
     def identifier(self, p: Any):
@@ -1658,7 +1576,3 @@ class CParser(Parser):
     @_('RBRACE')
     def brace_close(self, p: Any):
         return p[0]
-
-    @_('')
-    def empty(self, p: Any):
-        return None

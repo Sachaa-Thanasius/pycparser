@@ -9,12 +9,11 @@ from pycparser import c_ast
 from pycparser.c_parser import ParseError
 from pycparser.sly.cparsing import cparser
 
-_c_parser = cparser.CParser(lex_optimize=False, yacc_debug=True, yacc_optimize=False, yacctab='yacctab')
+_c_parser = cparser.CParser()
 
 
 def expand_decl(decl: Any) -> list[Any]:
-    """ Converts the declaration into a nested list.
-    """
+    """ Converts the declaration into a nested list."""
     typ = type(decl)
 
     if typ == c_ast.TypeDecl:
