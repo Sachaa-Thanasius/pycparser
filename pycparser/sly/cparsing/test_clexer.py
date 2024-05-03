@@ -311,7 +311,7 @@ def test_statements(clex: CLexer, test_input: str, expected: list[str]) -> None:
 
 
 def test_preprocessor_line(clex: CLexer) -> None:
-    assert do_lex(clex, '#abracadabra') == ['PPHASH', 'ID']
+    assert do_lex(clex, '#abracadabra') == ['PP_HASH', 'ID']
 
     test_input = r"""
     546
@@ -401,27 +401,27 @@ def test_preprocessor_pragma(clex: CLexer) -> None:
     assert t1.type == 'INT_CONST_DEC'
 
     t2 = next(tokenizer)
-    assert t2.type == 'PPPRAGMA'
+    assert t2.type == 'PP_PRAGMA'
 
     t3 = next(tokenizer)
-    assert t3.type == 'PPPRAGMA'
+    assert t3.type == 'PP_PRAGMA'
 
     t4 = next(tokenizer)
-    assert t4.type == 'PPPRAGMASTR'
+    assert t4.type == 'PP_PRAGMASTR'
     assert t4.value == 'helo me'
 
     for _ in range(3):
         next(tokenizer)
 
     t5 = next(tokenizer)
-    assert t5.type == 'PPPRAGMASTR'
+    assert t5.type == 'PP_PRAGMASTR'
     assert t5.value == 'omp parallel private(th_id)'
 
     for _ in range(5):
         ta = next(tokenizer)
-        assert ta.type == 'PPPRAGMA'
+        assert ta.type == 'PP_PRAGMA'
         tb = next(tokenizer)
-        assert tb.type == 'PPPRAGMASTR'
+        assert tb.type == 'PP_PRAGMASTR'
 
     t6a = next(tokenizer)
     t6l = next(tokenizer)

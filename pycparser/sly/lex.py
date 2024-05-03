@@ -121,7 +121,7 @@ class TokenStr(str):
 
 
 class _Before:
-    def __init__(self, tok, pattern):
+    def __init__(self, tok: str, pattern: str):
         self.tok = tok
         self.pattern = pattern
 
@@ -161,11 +161,10 @@ class LexerMetaDict(Dict[str, Any]):
 
         return super().__delitem__(key)
 
-    def __getitem__(self, key: str) -> TokenStr:
-        if key not in self and key.split('ignore_')[-1].isupper() and key[:1] != '_':
+    def __missing__(self, key: str) -> TokenStr:
+        if key.split('ignore_')[-1].isupper() and key[:1] != '_':
             return TokenStr(key, key, self.remap)
-
-        return super().__getitem__(key)
+        raise KeyError
 
 
 class LexerMeta(type):

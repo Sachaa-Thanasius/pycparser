@@ -1881,11 +1881,10 @@ class ParserMetaDict(Dict[str, Any]):
                 raise GrammarError(f'Redefinition of {key}. Perhaps an earlier {key} is missing @_')
         super().__setitem__(key, value)
 
-    def __getitem__(self, key: str):
-        if key not in self and key.isupper() and key[:1] != '_':
+    def __missing__(self, key: str):
+        if key.isupper() and key[:1] != '_':
             return key.upper()
-
-        return super().__getitem__(key)
+        raise KeyError
 
 
 def _decorator(rule: str, *extra: str) -> Callable[[CallableT], CallableT]:
@@ -1905,11 +1904,11 @@ class ParserMeta(type):
         d['_'] = _decorator
         return d
 
-    def __new__(meta, clsname: str, bases: tuple[type, ...], attributes: ParserMetaDict):
+    def __new__(cls, clsname: str, bases: tuple[type, ...], attributes: ParserMetaDict):
         del attributes['_']
-        cls: type[Parser] = super().__new__(meta, clsname, bases, attributes)
-        cls._build(list(attributes.items()))
-        return cls
+        self: type[Parser] = super().__new__(cls, clsname, bases, attributes)
+        self._build(list(attributes.items()))
+        return self
 
 
 class Parser(metaclass=ParserMeta):

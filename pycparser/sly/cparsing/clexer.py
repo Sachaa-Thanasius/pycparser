@@ -9,9 +9,9 @@ from pycparser.sly import Lexer
 from pycparser.sly.lex import Token
 
 if TYPE_CHECKING:
-    from typing import Callable, Protocol, TypeVar, runtime_checkable
+    from typing import Protocol, TypeVar, runtime_checkable
 
-    CallableT = TypeVar('CallableT')
+    CallableT = TypeVar('CallableT', bound=Callable[..., Any])
 
     @runtime_checkable
     class _RuleDecorator(Protocol):
@@ -101,43 +101,6 @@ class CLexer(Lexer):
         INT128,
     }
 
-    AUTO        = 'auto'
-    BREAK       = 'break'
-    CASE        = 'case'
-    CHAR        = 'char'
-    CONST       = 'const'
-    CONTINUE    = 'continue'
-    DEFAULT     = 'default'
-    DO          = 'do'
-    DOUBLE      = 'double'
-    ELSE        = 'else'
-    ENUM        = 'enum'
-    EXTERN      = 'extern'
-    FLOAT       = 'float'
-    FOR         = 'for'
-    GOTO        = 'goto'
-    IF          = 'if'
-    INLINE      = 'intline'
-    INT         = 'int'
-    LONG        = 'long'
-    REGISTER    = 'register'
-    OFFSETOF    = 'offsetof'
-    RESTRICT    = 'restrict'
-    RETURN      = 'return'
-    SHORT       = 'short'
-    SIGNED      = 'signed'
-    SIZEOF      = 'sizeof'
-    STATIC      = 'static'
-    STRUCT      = 'struct'
-    SWITCH      = 'switch'
-    TYPEDEF     = 'typedef'
-    UNION       = 'union'
-    UNSIGNED    = 'unsigned'
-    VOID        = 'void'
-    VOLATILE    = 'volatile'
-    WHILE       = 'while'
-    INT128      = '__int128'
-
     keywords_new: set[str] = {
         BOOL_, COMPLEX_,
         NORETURN_, THREAD_LOCAL_, STATIC_ASSERT_,
@@ -145,97 +108,74 @@ class CLexer(Lexer):
         PRAGMA_,
     }
 
-    BOOL_           = '_Bool'
-    COMPLEX_        = '_Complex'
-    NORETURN_       = '_Noreturn'
-    THREAD_LOCAL_   = '_Thread_local'
-    STATIC_ASSERT_  = '_Static_assert'
-    ATOMIC_         = '_Atomic'
-    ALIGNOF_        = '_Alignof'
-    ALIGNAS_        = '_Alignas'
-    PRAGMA_         = '_Pragma'
+    tokens: set[str] = keywords | keywords_new | {
+        # Identifiers
+        ID,
 
-    keyword_map: dict[str, str] = {str(keyword): keyword for keyword in keywords}
-    keyword_map.update({str(keyword): keyword for keyword in keywords_new})
+        # Type identifiers (identifiers previously defined as types with typedef)
+        TYPEID,
 
-    tokens: set[str] = set(
-        keywords | keywords_new | {
-            # Identifiers
-            ID,
+        # constants
+        INT_CONST_DEC, INT_CONST_OCT, INT_CONST_HEX, INT_CONST_BIN, INT_CONST_CHAR,
+        FLOAT_CONST, HEX_FLOAT_CONST,
+        CHAR_CONST,
+        WCHAR_CONST,
+        U8CHAR_CONST,
+        U16CHAR_CONST,
+        U32CHAR_CONST,
 
-            # Type identifiers (identifiers previously defined as types with typedef)
-            TYPEID,
+        # String literals
+        STRING_LITERAL,
+        WSTRING_LITERAL,
+        U8STRING_LITERAL,
+        U16STRING_LITERAL,
+        U32STRING_LITERAL,
 
-            # constants
-            INT_CONST_DEC, INT_CONST_OCT, INT_CONST_HEX, INT_CONST_BIN, INT_CONST_CHAR,
-            FLOAT_CONST, HEX_FLOAT_CONST,
-            CHAR_CONST,
-            WCHAR_CONST,
-            U8CHAR_CONST,
-            U16CHAR_CONST,
-            U32CHAR_CONST,
-
-            # String literals
-            STRING_LITERAL,
-            WSTRING_LITERAL,
-            U8STRING_LITERAL,
-            U16STRING_LITERAL,
-            U32STRING_LITERAL,
-
-            # Operators
-            PLUS, MINUS, TIMES, DIVIDE, MOD,
-            OR, AND, NOT, XOR, LSHIFT, RSHIFT,
-            LOR, LAND, LNOT,
-            LT, LE, GT, GE, EQ, NE,
-
-            # Assignment
-            EQUALS, TIMESEQUAL, DIVEQUAL, MODEQUAL,
-            PLUSEQUAL, MINUSEQUAL,
-            LSHIFTEQUAL,RSHIFTEQUAL, ANDEQUAL, XOREQUAL,
-            OREQUAL,
-
-            # Increment/decrement
-            PLUSPLUS, MINUSMINUS,
-
-            # Structure dereference (->)
-            ARROW,
-
-            # Conditional operator (?)
-            CONDOP,
-
-            # Ellipsis (...)
-            ELLIPSIS,
-
-            # Delimiters (excluding a few in literals below)
-            LPAREN, RPAREN,         # ( )
-            LBRACKET, RBRACKET,     # [ ]
-            LBRACE, RBRACE,         # { }
-
-            # pre-processor
-            PPHASH,       # '#'
-            PPPRAGMA,     # 'pragma'
-            PPPRAGMASTR,
-        }
-    )
-
-    # More delimiters. Might be expanded.
-    literals = {
         # Operators
-        # '=', '!', '<', '>', '+', '-', '*', '/', '%', '|', '&', '~', '^', '?',
-        # Delimiters
-        # '(', ')', '[', ']',
-        ',', '.', ';', ':',
-        # Scope delimiters
-        # '{', '}',
+        PLUS, MINUS, TIMES, DIVIDE, MOD,
+        OR, AND, NOT, XOR, LSHIFT, RSHIFT,
+        LOR, LAND, LNOT,
+        LT, LE, GT, GE, EQ, NE,
+
+        # Assignment
+        EQUALS, TIMESEQUAL, DIVEQUAL, MODEQUAL,
+        PLUSEQUAL, MINUSEQUAL,
+        LSHIFTEQUAL,RSHIFTEQUAL, ANDEQUAL, XOREQUAL,
+        OREQUAL,
+
+        # Increment/decrement
+        PLUSPLUS, MINUSMINUS,
+
+        # Structure dereference (->)
+        ARROW,
+
+        # Conditional operator (?)
+        CONDOP,
+
+        # Ellipsis (...)
+        ELLIPSIS,
+
+        # Delimiters (excluding a few in literals below)
+        LPAREN, RPAREN,         # ( )
+        LBRACKET, RBRACKET,     # [ ]
+        LBRACE, RBRACE,         # { }
+
+        # pre-processor
+        PP_HASH,       # '#'
+        PP_PRAGMA,     # 'pragma'
+        PP_PRAGMASTR,
     }
     # fmt: on
+
+    # More delimiters. Might be expanded.
+    literals = {',', '.', ';', ':'}
 
     ignore = ' \t'
 
     # ==== The rest of the tokens
 
     @_(r'[ \t]*\#')
-    def PPHASH(self, t: Token) -> Token | None:
+    def PP_HASH(self, t: Token) -> Token | None:
         if _line_pattern.match(self.text, pos=t.end):
             self.push_state(PPLineLexer)
             self.pp_line = None
@@ -246,7 +186,7 @@ class CLexer(Lexer):
             self.push_state(PPPragmaLexer)
             return None
 
-        t.type = 'PPHASH'
+        t.type = 'PP_HASH'
         return t
 
     STRING_LITERAL = '"' + _string_char + '*"'
@@ -358,13 +298,61 @@ class CLexer(Lexer):
     # Scope delimiters
     LBRACE      = r'\{'
     RBRACE      = r'\}'
+
+    # Identifiers and keywords
+    ID = r'[a-zA-Z_$][0-9a-zA-Z_$]*'
+
+    ID['auto']              = AUTO
+    ID['break']             = BREAK
+    ID['case']              = CASE
+    ID['char']              = CHAR
+    ID['const']             = CONST
+    ID['continue']          = CONTINUE
+    ID['default']           = DEFAULT
+    ID['do']                = DO
+    ID['double']            = DOUBLE
+    ID['else']              = ELSE
+    ID['enum']              = ENUM
+    ID['extern']            = EXTERN
+    ID['float']             = FLOAT
+    ID['for']               = FOR
+    ID['goto']              = GOTO
+    ID['if']                = IF
+    ID['intline']           = INLINE
+    ID['int']               = INT
+    ID['long']              = LONG
+    ID['register']          = REGISTER
+    ID['offsetof']          = OFFSETOF
+    ID['restrict']          = RESTRICT
+    ID['return']            = RETURN
+    ID['short']             = SHORT
+    ID['signed']            = SIGNED
+    ID['sizeof']            = SIZEOF
+    ID['static']            = STATIC
+    ID['struct']            = STRUCT
+    ID['switch']            = SWITCH
+    ID['typedef']           = TYPEDEF
+    ID['union']             = UNION
+    ID['unsigned']          = UNSIGNED
+    ID['void']              = VOID
+    ID['volatile']          = VOLATILE
+    ID['while']             = WHILE
+    ID['__int128']          = INT128
+
+    ID['_Bool']             = BOOL_
+    ID['_Complex']          = COMPLEX_
+    ID['_Noreturn']         = NORETURN_
+    ID['_Thread_local']     = THREAD_LOCAL_
+    ID['_Static_assert']    = STATIC_ASSERT_
+    ID['_Atomic']           = ATOMIC_
+    ID['_Alignof']          = ALIGNOF_
+    ID['_Alignas']          = ALIGNAS_
+    ID['_Pragma']           = PRAGMA_
     # fmt: on
 
-    @_(r'[a-zA-Z_$][0-9a-zA-Z_$]*')
     def ID(self, t: Token) -> Token:
         # valid C identifiers (K&R2: A.2.3), plus '$' (supported by some compilers)
-        t.type = self.keyword_map.get(t.value, 'ID')
-        if t.type == 'ID' and self.type_lookup_func(t.value):
+        if self.type_lookup_func(t.value):
             t.type = 'TYPEID'
         return t
 
@@ -387,7 +375,7 @@ class PPLineLexer(Lexer):
         self.pp_line: str | None = None
         self.pp_filename: str | None = None
 
-    tokens: set[str] = {FILENAME, LINE_NUMBER, PPLINE}
+    tokens: set[str] = {FILENAME, LINE_NUMBER, PP_LINE}
 
     ignore = ' \t'
 
@@ -408,7 +396,7 @@ class PPLineLexer(Lexer):
             pass
 
     @_(r'line')
-    def PPLINE(self, t: Token) -> None:
+    def PP_LINE(self, t: Token) -> None:
         pass
 
     @_(r'\n')
@@ -434,15 +422,15 @@ class PPPragmaLexer(Lexer):
         self.pp_line: str | None = None
         self.pp_filename: str | None = None
 
-    tokens: set[str] = {PPPRAGMA, STR}
+    tokens: set[str] = {PP_PRAGMA, STR}
 
     ignore = ' \t'
 
-    PPPRAGMA = 'pragma'
+    PP_PRAGMA = 'pragma'
 
     @_('.+')
     def STR(self, t: Token) -> Token:
-        t.type = 'PPPRAGMASTR'
+        t.type = 'PP_PRAGMASTR'
         return t
 
     @_(r'\n')
