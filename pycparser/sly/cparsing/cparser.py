@@ -1,5 +1,5 @@
-# pyright: reportRedeclaration=none
-# ruff: noqa: ANN201, F811, S105, RET505
+# pyright: reportRedeclaration=none, reportUndefinedVariable=none
+# ruff: noqa: ANN201, F811, F821, S105, RET505
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any

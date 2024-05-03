@@ -39,9 +39,9 @@ from typing import TYPE_CHECKING, Any, Callable, ClassVar, Dict, Generator, Type
 if TYPE_CHECKING:
     from typing_extensions import Self
 
-CallableT = TypeVar("CallableT", bound=Callable[..., Any])
+CallableT = TypeVar('CallableT', bound=Callable[..., Any])
 
-__all__ = ['Lexer', 'LexerStateChange']
+__all__ = ('Lexer', 'LexerStateChange')
 
 
 class LexError(Exception):
@@ -76,7 +76,7 @@ class LexerStateChange(Exception):
     Exception raised to force a lexing state change
     '''
 
-    def __init__(self, newstate, tok=None):
+    def __init__(self, newstate: type[Lexer], tok: Token | None = None):
         self.newstate = newstate
         self.tok = tok
 
@@ -102,10 +102,10 @@ class Token:
 
 
 class TokenStr(str):
-    def __new__(cls, value: object, key: str | None = None, remap: dict[tuple[str, Any], Any] | None = None):
+    def __new__(cls, value: object, key: str, remap: dict[tuple[str, Any], Any] | None = None):
         return super().__new__(cls, value)
 
-    def __init__(self, value: object, key: str | None = None, remap: dict[tuple[str, Any], Any] | None = None):
+    def __init__(self, value: object, key: str, remap: dict[tuple[str, Any], Any] | None = None):
         self.key = key
         self.remap = remap
 
@@ -150,7 +150,7 @@ class LexerMetaDict(Dict[str, Any]):
                 if callable(value):
                     value.pattern = prior
                 else:
-                    raise AttributeError(f'Name {key} redefined')
+                    raise AttributeError(f'Name {key} redefined')  # noqa: TRY004
 
         super().__setitem__(key, value)
 
@@ -172,6 +172,9 @@ class LexerMeta(type):
     Metaclass for collecting lexing rules
     '''
 
+    if TYPE_CHECKING:
+        _rules: list[tuple[str, Any]]
+
     @classmethod
     def __prepare__(cls, name: str, bases: tuple[type, ...], **kwds: object) -> LexerMetaDict:
         d = LexerMetaDict()
@@ -182,9 +185,9 @@ class LexerMeta(type):
             def decorate(func: CallableT) -> CallableT:
                 pattern = '|'.join(f'({pat})' for pat in patterns)
                 if hasattr(func, 'pattern'):
-                    func.pattern = f"{pattern}|{func.pattern}"
+                    func.pattern = f'{pattern}|{func.pattern}'  # type: ignore # Runtime attribute access and assignment.
                 else:
-                    func.pattern = pattern
+                    func.pattern = pattern  # type: ignore # Runtime attribute assignment.
                 return func
 
             return decorate
@@ -212,18 +215,18 @@ class LexerMeta(type):
 
 class Lexer(metaclass=LexerMeta):
     # These attributes may be defined in subclasses
-    tokens = set()
-    literals = set()
+    tokens: ClassVar[set[str]] = set()
+    literals: ClassVar[set[str]] = set()
     ignore: str = ''
     reflags: int = 0
     regex_module = re
 
     _token_names: ClassVar[set[str]] = set()
-    _token_funcs = {}
-    _ignored_tokens = set()
+    _token_funcs: ClassVar[dict[str, Callable[[Self, Token], Any]]] = {}
+    _ignored_tokens: ClassVar[set[str]] = set()
     _remapping: ClassVar[dict[str, dict[str, str]]] = {}
-    _delete = {}
-    _remap = {}
+    _delete: ClassVar[list[str]] = []
+    _remap: ClassVar[dict[tuple[str, Any], Any]] = {}
 
     # Internal attributes
     __state_stack: list[type[Lexer]] | None = None
@@ -231,6 +234,7 @@ class Lexer(metaclass=LexerMeta):
 
     if TYPE_CHECKING:
         _attributes: ClassVar[dict[str, Any]]
+        _before: ClassVar[dict[str, str]]
 
     @classmethod
     def _collect_rules(cls) -> None:
@@ -313,7 +317,7 @@ class Lexer(metaclass=LexerMeta):
                 cls._remapping[key] = {}
             cls._remapping[key][val] = newtok
 
-        remapped_toks = set()
+        remapped_toks: set[str] = set()
         for d in cls._remapping.values():
             remapped_toks.update(d.values())
 
@@ -327,7 +331,7 @@ class Lexer(metaclass=LexerMeta):
         parts: list[str] = []
         for tokname, value in cls._rules:
             if tokname.startswith('ignore_'):
-                tokname = tokname[7:]
+                tokname = tokname[7:]  # noqa: PLW2901
                 cls._ignored_tokens.add(tokname)
 
             if isinstance(value, str):
@@ -343,7 +347,7 @@ class Lexer(metaclass=LexerMeta):
             # Make sure the individual regex compiles properly
             try:
                 cpat = cls.regex_module.compile(part, cls.reflags)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 raise PatternError(f'Invalid regex for token {tokname}') from e
 
             # Verify that the pattern doesn't match the empty string
@@ -373,7 +377,7 @@ class Lexer(metaclass=LexerMeta):
         '''
 
         if not isinstance(cls, LexerMeta):
-            raise TypeError("state must be a subclass of Lexer")
+            raise TypeError('state must be a subclass of Lexer')
 
         if self.__set_state:
             self.__set_state(cls)

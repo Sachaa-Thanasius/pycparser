@@ -58,7 +58,7 @@ CallableT = TypeVar("CallableT", bound=Callable[..., Any])
 if TYPE_CHECKING:
     import types
 
-__all__ = ['Parser']
+__all__ = ('Parser',)
 
 
 class YaccError(Exception):
@@ -544,9 +544,9 @@ class Grammar:
             prodprec = self.Precedence.get(precname, ('right', 0))
 
         # See if the rule is already in the rulemap
-        map = f'{prodname} -> {syms}'
-        if map in self.Prodmap:
-            m = self.Prodmap[map]
+        map_ = f'{prodname} -> {syms}'
+        if map_ in self.Prodmap:
+            m = self.Prodmap[map_]
             raise GrammarError(f'{file}:{line}: Duplicate rule {m}. ' + f'Previous definition at {m.file}:{m.line}')
 
         # From this point on, everything is valid.  Create a new Production instance
@@ -566,7 +566,7 @@ class Grammar:
         # Create a production and add it to the list of productions
         p = Production(pnumber, prodname, syms, prodprec, func, file, line)
         self.Productions.append(p)
-        self.Prodmap[map] = p
+        self.Prodmap[map_] = p
 
         # Add to the global productions list
         try:
@@ -2155,8 +2155,8 @@ class Parser(metaclass=ParserMeta):
         '''
         Parse the given input tokens.
         '''
-        lookahead: Token | None = None  # Current lookahead symbol
-        lookaheadstack: list[Token] = []  # Stack of lookahead symbols
+        lookahead: YaccSymbol | None = None  # Current lookahead symbol
+        lookaheadstack: list[YaccSymbol] = []  # Stack of lookahead symbols
         actions = self._lrtable.lr_action  # Local reference to action table (to avoid lookup on self.)
         goto = self._lrtable.lr_goto  # Local reference to goto table (to avoid lookup on self.)
         prod: list[Production] = (
@@ -2169,7 +2169,8 @@ class Parser(metaclass=ParserMeta):
         # Set up the state and symbol stacks
         self.tokens = tokens
         self.statestack = statestack = []  # Stack of parsing states
-        self.symstack = symstack = []  # Stack of grammar symbols
+        symstack: list[YaccSymbol] = []
+        self.symstack = symstack  # Stack of grammar symbols
         pslice._stack = symstack  # Associate the stack with the production
         self.restart()
 

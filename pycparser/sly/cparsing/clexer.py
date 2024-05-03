@@ -1,4 +1,4 @@
-# pyright: reportUndefinedVariable=none
+# pyright: reportUndefinedVariable=none, reportIndexIssue=none
 # ruff: noqa: RUF012, F821
 from __future__ import annotations
 
@@ -81,6 +81,22 @@ _binary_exponent_part = r'''([pP][+-]?[0-9]+)'''
 _hex_fractional_constant = '(((' + _hex_digits + r""")?\.""" + _hex_digits + ')|(' + _hex_digits + r"""\.))"""
 
 
+def _find_token_column(text: str, t: Token) -> int:
+    last_cr = text.rfind('\n', 0, t.index)
+    if last_cr < 0:
+        last_cr = 0
+    return (t.index - last_cr) + 1
+
+
+class CLexException(Exception):
+    """Exception raised when the CLexer can't handle an invalid token."""
+
+    def __init__(self, message: str, text: str, error_coords: tuple[int, int]):
+        super().__init__(message)
+        self.text = text
+        self.error_coords = error_coords
+
+
 class CLexer(Lexer):
     def __init__(self, type_lookup_func: Callable[[str], object]):
         self.type_lookup_func: Callable[[str], object] = type_lookup_func
@@ -108,7 +124,7 @@ class CLexer(Lexer):
         PRAGMA_,
     }
 
-    tokens: set[str] = keywords | keywords_new | {
+    tokens = keywords | keywords_new | {
         # Identifiers
         ID,
 
@@ -361,12 +377,9 @@ class CLexer(Lexer):
         self.lineno += t.value.count('\n')
 
     def error(self, t: Token, msg: str | None = None) -> NoReturn:
-        last_cr = self.text.rfind('\n', 0, t.index)
-        if last_cr < 0:
-            last_cr = 0
-        column = (t.index - last_cr) + 1
+        column = _find_token_column(self.text, t)
         msg = msg or f'(Line, Column) {self.lineno}, {column}: Bad character {t.value[0]!r}'
-        raise RuntimeError(msg, t.value, t.index)
+        raise CLexException(msg, t.value, (self.lineno, column))
 
 
 class PPLineLexer(Lexer):
@@ -375,7 +388,7 @@ class PPLineLexer(Lexer):
         self.pp_line: str | None = None
         self.pp_filename: str | None = None
 
-    tokens: set[str] = {FILENAME, LINE_NUMBER, PP_LINE}
+    tokens = {FILENAME, LINE_NUMBER, PP_LINE}
 
     ignore = ' \t'
 
@@ -412,8 +425,9 @@ class PPLineLexer(Lexer):
         self.pop_state()
 
     def error(self, t: Token, msg: str | None = None) -> NoReturn:
+        column = _find_token_column(self.text, t)
         msg = msg or f'invalid #line directive {t.value}'
-        raise RuntimeError(msg, t)
+        raise CLexException(msg, t.value, (self.lineno, column))
 
 
 class PPPragmaLexer(Lexer):
@@ -422,7 +436,7 @@ class PPPragmaLexer(Lexer):
         self.pp_line: str | None = None
         self.pp_filename: str | None = None
 
-    tokens: set[str] = {PP_PRAGMA, STR}
+    tokens = {PP_PRAGMA, STR}
 
     ignore = ' \t'
 
@@ -439,5 +453,6 @@ class PPPragmaLexer(Lexer):
         self.pop_state()
 
     def error(self, t: Token, msg: str | None = None) -> NoReturn:
+        column = _find_token_column(self.text, t)
         msg = msg or f'invalid #pragma directive {t.value}'
-        raise RuntimeError(msg, t)
+        raise CLexException(msg, t.value, (self.lineno, column))
