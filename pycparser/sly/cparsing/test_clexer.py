@@ -341,9 +341,10 @@ def test_preprocessor_line(clex: CLexer) -> None:
     assert t2.lineno == 66
     assert clex.filename == r'kwas\df.h'
 
-    for _ in range(3):
-        t = next(tokenizer)
+    t = next(tokenizer)
+    t = next(tokenizer)
 
+    t = next(tokenizer)
     assert t.type == 'ID'
     assert t.value == 'armo'
     assert t.lineno == 9

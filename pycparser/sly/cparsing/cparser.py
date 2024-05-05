@@ -9,19 +9,22 @@ from pycparser.sly import Parser
 from pycparser.sly.cparsing.clexer import CLexer
 
 if TYPE_CHECKING:
-    from typing import Callable, Protocol, TypeVar, runtime_checkable
+    from typing import Callable, Protocol, TypeVar, cast
 
     from typing_extensions import Self
 
-    CallableT = TypeVar("CallableT")
+    CallableT = TypeVar("CallableT", bound=Callable[..., Any])
 
-    @runtime_checkable
     class _RuleDecorator(Protocol):
         def __call__(self, rule: str, *extras: str) -> Callable[[CallableT], CallableT]: ...
 
-    _ = object()
+    # Typing hack to account for _ existing in a Lexer class's namespace only during class creation.
+    _ = cast(_RuleDecorator, object())
+else:
 
-    assert isinstance(_, _RuleDecorator)
+    class Self:
+        def __repr__(self):
+            return "<placeholder for typing.Self>"
 
 
 class Coord:

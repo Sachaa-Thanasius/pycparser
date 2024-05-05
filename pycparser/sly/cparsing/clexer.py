@@ -9,16 +9,15 @@ from pycparser.sly import Lexer
 from pycparser.sly.lex import Token
 
 if TYPE_CHECKING:
-    from typing import Protocol, TypeVar, runtime_checkable
+    from typing import Protocol, TypeVar, cast
 
     CallableT = TypeVar('CallableT', bound=Callable[..., Any])
 
-    @runtime_checkable
     class _RuleDecorator(Protocol):
         def __call__(self, rule: str, *extras: str) -> Callable[[CallableT], CallableT]: ...
 
-    _ = object()
-    assert isinstance(_, _RuleDecorator)
+    # Typing hack to account for _ existing in a Lexer class's namespace only during class creation.
+    _ = cast(_RuleDecorator, object())
 
 
 _line_pattern = re.compile(r'([ \t]*line\W)|([ \t]*\d+)')
