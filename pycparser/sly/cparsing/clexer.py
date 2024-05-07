@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections import ChainMap
 from typing import TYPE_CHECKING, Callable, NoReturn
 
 from pycparser.sly import Lexer
@@ -87,7 +88,7 @@ def _find_token_column(text: str, t: Token) -> int:
     return (t.index - last_cr) + 1
 
 
-class CLexException(Exception):
+class CLexError(Exception):
     """Exception raised when the CLexer can't handle an invalid token."""
 
     def __init__(self, message: str, text: str, error_coords: tuple[int, int]):
@@ -97,30 +98,16 @@ class CLexException(Exception):
 
 
 class CLexer(Lexer):
-    def __init__(self, type_lookup_func: Callable[[str], object]):
-        self.type_lookup_func: Callable[[str], object] = type_lookup_func
-        self.filename: str = ''
-        self.pp_line: str | None = None
-        self.pp_filename: str | None = None
-
     # ==== Reserved keywords
     # fmt: off
     keywords: set[str] = {
-        AUTO, BREAK, CASE, CHAR, CONST,
-        CONTINUE, DEFAULT, DO, DOUBLE, ELSE, ENUM, EXTERN,
-        FLOAT, FOR, GOTO, IF, INLINE, INT, LONG,
-        REGISTER, OFFSETOF,
-        RESTRICT, RETURN, SHORT, SIGNED, SIZEOF, STATIC, STRUCT,
-        SWITCH, TYPEDEF, UNION, UNSIGNED, VOID,
-        VOLATILE, WHILE,
-        INT128,
+        AUTO, BREAK, CASE, CHAR, CONST, CONTINUE, DEFAULT, DO, DOUBLE, ELSE, ENUM, EXTERN, FLOAT, FOR, GOTO, IF,
+        INLINE, INT, LONG, REGISTER, OFFSETOF, RESTRICT, RETURN, SHORT, SIGNED, SIZEOF, STATIC, STRUCT, SWITCH,
+        TYPEDEF, UNION, UNSIGNED, VOID, VOLATILE, WHILE, INT128,
     }
 
     keywords_new: set[str] = {
-        BOOL_, COMPLEX_,
-        NORETURN_, THREAD_LOCAL_, STATIC_ASSERT_,
-        ATOMIC_, ALIGNOF_, ALIGNAS_,
-        PRAGMA_,
+        BOOL_, COMPLEX_, NORETURN_, THREAD_LOCAL_, STATIC_ASSERT_, ATOMIC_, ALIGNOF_, ALIGNAS_, PRAGMA_,
     }
 
     tokens = keywords | keywords_new | {
@@ -133,11 +120,7 @@ class CLexer(Lexer):
         # constants
         INT_CONST_DEC, INT_CONST_OCT, INT_CONST_HEX, INT_CONST_BIN, INT_CONST_CHAR,
         FLOAT_CONST, HEX_FLOAT_CONST,
-        CHAR_CONST,
-        WCHAR_CONST,
-        U8CHAR_CONST,
-        U16CHAR_CONST,
-        U32CHAR_CONST,
+        CHAR_CONST, WCHAR_CONST, U8CHAR_CONST, U16CHAR_CONST, U32CHAR_CONST,
 
         # String literals
         STRING_LITERAL,
@@ -155,7 +138,7 @@ class CLexer(Lexer):
         # Assignment
         EQUALS, TIMESEQUAL, DIVEQUAL, MODEQUAL,
         PLUSEQUAL, MINUSEQUAL,
-        LSHIFTEQUAL,RSHIFTEQUAL, ANDEQUAL, XOREQUAL,
+        LSHIFTEQUAL, RSHIFTEQUAL, ANDEQUAL, XOREQUAL,
         OREQUAL,
 
         # Increment/decrement
@@ -170,11 +153,6 @@ class CLexer(Lexer):
         # Ellipsis (...)
         ELLIPSIS,
 
-        # Delimiters (excluding a few in literals below)
-        LPAREN, RPAREN,         # ( )
-        LBRACKET, RBRACKET,     # [ ]
-        LBRACE, RBRACE,         # { }
-
         # pre-processor
         PP_HASH,       # '#'
         PP_PRAGMA,     # 'pragma'
@@ -182,8 +160,8 @@ class CLexer(Lexer):
     }
     # fmt: on
 
-    # More delimiters. Might be expanded.
-    literals = {',', '.', ';', ':'}
+    # Delimiters and scope delimiters.
+    literals = {',', '.', ';', ':', '(', ')', '[', ']', '{', '}'}
 
     ignore = ' \t'
 
@@ -192,17 +170,18 @@ class CLexer(Lexer):
     @_(r'[ \t]*\#')
     def PP_HASH(self, t: Token) -> Token | None:
         if _line_pattern.match(self.text, pos=t.end):
-            self.push_state(PPLineLexer)
+            self.push_state(PreprocessorLineLexer)
             self.pp_line = None
             self.pp_filename = None
             return None
 
-        if _pragma_pattern.match(self.text, pos=t.end):
-            self.push_state(PPPragmaLexer)
+        elif _pragma_pattern.match(self.text, pos=t.end):  # noqa: RET505
+            self.push_state(PreprocessorPragmaLexer)
             return None
 
-        t.type = 'PP_HASH'
-        return t
+        else:
+            t.type = 'PP_HASH'
+            return t
 
     STRING_LITERAL = '"' + _string_char + '*"'
 
@@ -305,14 +284,6 @@ class CLexer(Lexer):
 
     # Delimiters
     ELLIPSIS    = r'\.\.\.'
-    LPAREN      = r'\('
-    RPAREN      = r'\)'
-    LBRACKET    = r'\['
-    RBRACKET    = r'\]'
-
-    # Scope delimiters
-    LBRACE      = r'\{'
-    RBRACE      = r'\}'
 
     # Identifiers and keywords
     ID = r'[a-zA-Z_$][0-9a-zA-Z_$]*'
@@ -367,7 +338,7 @@ class CLexer(Lexer):
 
     def ID(self, t: Token) -> Token:
         # valid C identifiers (K&R2: A.2.3), plus '$' (supported by some compilers)
-        if self.type_lookup_func(t.value):
+        if self.scope_stack.get(t.value, False):
             t.type = 'TYPEID'
         return t
 
@@ -378,15 +349,16 @@ class CLexer(Lexer):
     def error(self, t: Token, msg: str | None = None) -> NoReturn:
         column = _find_token_column(self.text, t)
         msg = msg or f'(Line, Column) {self.lineno}, {column}: Bad character {t.value[0]!r}'
-        raise CLexException(msg, t.value, (self.lineno, column))
+        raise CLexError(msg, t.value, (self.lineno, column))
 
-
-class PPLineLexer(Lexer):
-    def __init__(self):
+    def __init__(self, scope_stack: ChainMap[str, bool]):
+        self.scope_stack: ChainMap[str, bool] = scope_stack
         self.filename: str = ''
         self.pp_line: str | None = None
         self.pp_filename: str | None = None
 
+
+class PreprocessorLineLexer(Lexer):
     tokens = {FILENAME, LINE_NUMBER, PP_LINE}
 
     ignore = ' \t'
@@ -426,15 +398,15 @@ class PPLineLexer(Lexer):
     def error(self, t: Token, msg: str | None = None) -> NoReturn:
         column = _find_token_column(self.text, t)
         msg = msg or f'invalid #line directive {t.value}'
-        raise CLexException(msg, t.value, (self.lineno, column))
+        raise CLexError(msg, t.value, (self.lineno, column))
 
-
-class PPPragmaLexer(Lexer):
     def __init__(self):
         self.filename: str = ''
         self.pp_line: str | None = None
         self.pp_filename: str | None = None
 
+
+class PreprocessorPragmaLexer(Lexer):
     tokens = {PP_PRAGMA, STR}
 
     ignore = ' \t'
@@ -454,4 +426,9 @@ class PPPragmaLexer(Lexer):
     def error(self, t: Token, msg: str | None = None) -> NoReturn:
         column = _find_token_column(self.text, t)
         msg = msg or f'invalid #pragma directive {t.value}'
-        raise CLexException(msg, t.value, (self.lineno, column))
+        raise CLexError(msg, t.value, (self.lineno, column))
+
+    def __init__(self):
+        self.filename: str = ''
+        self.pp_line: str | None = None
+        self.pp_filename: str | None = None

@@ -2151,7 +2151,7 @@ class Parser(metaclass=ParserMeta):
         self.statestack.append(0)
         self.state = 0
 
-    def parse(self, tokens: Iterator[Token]) -> Any | None:
+    def parse(self, tokens: Iterator[Token]) -> Any:
         '''
         Parse the given input tokens.
         '''

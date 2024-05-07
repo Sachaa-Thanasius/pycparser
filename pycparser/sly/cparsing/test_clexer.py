@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections import ChainMap
+
 import pytest
 
 from pycparser.sly.cparsing.clexer import CLexer
@@ -7,10 +9,8 @@ from pycparser.sly.cparsing.clexer import CLexer
 
 @pytest.fixture
 def clex() -> CLexer:
-    def type_lookup_func(typ: str) -> bool:
-        return typ.startswith('mytype')
-
-    return CLexer(type_lookup_func)
+    scope_stack: ChainMap[str, bool] = ChainMap({'mytype': True})
+    return CLexer(scope_stack)
 
 
 def do_lex(lexer: CLexer, inp: str) -> list[str]:
@@ -40,10 +40,11 @@ def test_trivial_tokens(clex: CLexer, test_input: str, expected: list[str]) -> N
     [
         ('myt', ['ID']),
         ('mytype', ['TYPEID']),
-        ('mytype6 var', ['TYPEID', 'ID']),
+        ('mytype var', ['TYPEID', 'ID']),
     ],
 )
 def test_id_typeid(clex: CLexer, test_input: str, expected: list[str]) -> None:
+    # Assumes {'mytype': True} is in the scope stack. See the clex fixture.
     assert do_lex(clex, test_input) == expected
 
 
@@ -196,8 +197,8 @@ def test_string_literal(clex: CLexer, test_input: str, expected: list[str]) -> N
 @pytest.mark.parametrize(
     ("test_input", "expected"),
     [
-        (r'[{}]()', ['LBRACKET', 'LBRACE', 'RBRACE', 'RBRACKET', 'LPAREN', 'RPAREN']),
-        (r'()||!C&~Z?J', ['LPAREN', 'RPAREN', 'LOR', 'LNOT', 'ID', 'AND', 'NOT', 'ID', 'CONDOP', 'ID']),
+        (r'[{}]()', ['[', '{', '}', ']', '(', ')']),
+        (r'()||!C&~Z?J', ['(', ')', 'LOR', 'LNOT', 'ID', 'AND', 'NOT', 'ID', 'CONDOP', 'ID']),
         (
             r'+-*/%|||&&&^><>=<===!=',
             [
@@ -233,7 +234,7 @@ def test_mess(clex: CLexer, test_input: str, expected: list[str]) -> None:
         ('foo & 0xFF', ['ID', 'AND', 'INT_CONST_HEX']),
         (
             '(2+k) * 62',
-            ['LPAREN', 'INT_CONST_DEC', 'PLUS', 'ID', 'RPAREN', 'TIMES', 'INT_CONST_DEC'],
+            ['(', 'INT_CONST_DEC', 'PLUS', 'ID', ')', 'TIMES', 'INT_CONST_DEC'],
         ),
         ('x | y >> z', ['ID', 'OR', 'ID', 'RSHIFT', 'ID']),
         ('x <<= z << 5', ['ID', 'LSHIFTEQUAL', 'ID', 'LSHIFT', 'INT_CONST_DEC']),
@@ -255,7 +256,7 @@ def test_exprs(clex: CLexer, test_input: str, expected: list[str]) -> None:
             'for (int i = 0; i < n; ++i)',
             [
                 'FOR',
-                'LPAREN',
+                '(',
                 'INT',
                 'ID',
                 'EQUALS',
@@ -267,7 +268,7 @@ def test_exprs(clex: CLexer, test_input: str, expected: list[str]) -> None:
                 ';',
                 'PLUSPLUS',
                 'ID',
-                'RPAREN',
+                ')',
             ],
         ),
         ('self: goto self;', ['ID', ':', 'GOTO', 'ID', ';']),
@@ -282,10 +283,10 @@ def test_exprs(clex: CLexer, test_input: str, expected: list[str]) -> None:
             }""",
             [
                 'SWITCH',
-                'LPAREN',
+                '(',
                 'ID',
-                'RPAREN',
-                'LBRACE',
+                ')',
+                '{',
                 'CASE',
                 'ID',
                 ':',
@@ -301,7 +302,7 @@ def test_exprs(clex: CLexer, test_input: str, expected: list[str]) -> None:
                 'EQUALS',
                 'INT_CONST_DEC',
                 ';',
-                'RBRACE',
+                '}',
             ],
         ),
     ],
@@ -429,10 +430,10 @@ def test_preprocessor_pragma(clex: CLexer) -> None:
     t6b = next(tokenizer)
     t6r = next(tokenizer)
     assert t6a.type == 'PRAGMA_'
-    assert t6l.type == 'LPAREN'
+    assert t6l.type == '('
     assert t6b.type == 'STRING_LITERAL'
     assert t6b.value == '"something else"'
-    assert t6r.type == 'RPAREN'
+    assert t6r.type == ')'
 
     t7 = next(tokenizer)
     assert t7.type == 'INT_CONST_DEC'
