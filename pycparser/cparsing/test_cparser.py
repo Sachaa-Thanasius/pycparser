@@ -1,15 +1,20 @@
 # ruff: noqa: ANN201
 from __future__ import annotations
 
+from collections import ChainMap
 from typing import Any, Sequence
 
 from pycparser import c_ast
-from pycparser.sly.cparsing import clexer, cparser
+from pycparser.cparsing import clexer, cparser
 
 Coord = cparser.Coord
 
-test_clexer = clexer.CLexer()
-test_cparser = cparser.CParser()
+scope_map: ChainMap[str, bool] = ChainMap()
+test_clexer = clexer.CLexer(scope_map)
+test_cparser = cparser.CParser(scope_map)
+
+
+# ======== Helper functions.
 
 
 def parse(source: str, filename: str = "") -> c_ast.FileAST:
@@ -127,6 +132,9 @@ def get_decl_init(source: str, index: int = 0) -> Sequence[Any]:
     return expand_init(node.init)
 
 
+# ======== Actual tests.
+
+
 def test_FileAST():
     tree = parse('int a; char c;')
     assert isinstance(tree, c_ast.FileAST)
@@ -161,7 +169,9 @@ def test_coords():
     """Tests the "coordinates" of parsed elements - file name, line and column numbers, with modification
     inserted by #line directives.
     """
-
+    
+    coord1 = parse('int a;').ext[0].coord
+    print(f"{coord1}")
     assert parse('int a;').ext[0].coord == Coord('', 1, (5, 0))
 
     t1 = """

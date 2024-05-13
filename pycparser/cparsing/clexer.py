@@ -10,7 +10,7 @@ from pycparser.sly import Lexer
 from pycparser.sly.lex import Token
 
 if TYPE_CHECKING:
-    from typing import Protocol, TypeVar, cast
+    from typing import Any, Protocol, TypeVar, cast
 
     CallableT = TypeVar('CallableT', bound=Callable[..., Any])
 
@@ -83,9 +83,10 @@ _hex_fractional_constant = '(((' + _hex_digits + r""")?\.""" + _hex_digits + ')|
 
 def _find_token_column(text: str, t: Token) -> int:
     last_cr = text.rfind('\n', 0, t.index)
-    if last_cr < 0:
-        last_cr = 0
-    return (t.index - last_cr) + 1
+    # if last_cr < 0:
+    #     last_cr = 0
+    # return (t.index - last_cr) + 1
+    return t.index - last_cr
 
 
 class CLexError(Exception):
@@ -101,13 +102,15 @@ class CLexer(Lexer):
     # ==== Reserved keywords
     # fmt: off
     keywords: set[str] = {
-        AUTO, BREAK, CASE, CHAR, CONST, CONTINUE, DEFAULT, DO, DOUBLE, ELSE, ENUM, EXTERN, FLOAT, FOR, GOTO, IF,
-        INLINE, INT, LONG, REGISTER, OFFSETOF, RESTRICT, RETURN, SHORT, SIGNED, SIZEOF, STATIC, STRUCT, SWITCH,
-        TYPEDEF, UNION, UNSIGNED, VOID, VOLATILE, WHILE, INT128,
+        AUTO, BREAK, CASE, CHAR, CONST, CONTINUE, DEFAULT, DO, DOUBLE, ELSE, ENUM,
+        EXTERN, FLOAT, FOR, GOTO, IF, INLINE, INT, LONG, REGISTER, OFFSETOF,
+        RESTRICT, RETURN, SHORT, SIGNED, SIZEOF, STATIC, STRUCT, SWITCH, TYPEDEF,
+        UNION, UNSIGNED, VOID, VOLATILE, WHILE, INT128,
     }
 
     keywords_new: set[str] = {
-        BOOL_, COMPLEX_, NORETURN_, THREAD_LOCAL_, STATIC_ASSERT_, ATOMIC_, ALIGNOF_, ALIGNAS_, PRAGMA_,
+        ALIGNAS_, ALIGNOF_, ATOMIC_, BOOL_, COMPLEX_, NORETURN_, PRAGMA_,
+        STATIC_ASSERT_, THREAD_LOCAL_,
     }
 
     tokens = keywords | keywords_new | {
@@ -160,7 +163,7 @@ class CLexer(Lexer):
     }
     # fmt: on
 
-    # Delimiters and scope delimiters.
+    # Delimiters (scope and regular).
     literals = {',', '.', ';', ':', '(', ')', '[', ']', '{', '}'}
 
     ignore = ' \t'
@@ -286,7 +289,8 @@ class CLexer(Lexer):
     ELLIPSIS    = r'\.\.\.'
 
     # Identifiers and keywords
-    ID = r'[a-zA-Z_$][0-9a-zA-Z_$]*'
+    # valid C identifiers (K&R2: A.2.3), plus '$' (supported by some compilers)
+    ID = r'[a-zA-Z_$][0-9a-zA-Z_$]*' # type: ignore
 
     ID['auto']              = AUTO
     ID['break']             = BREAK
@@ -325,21 +329,32 @@ class CLexer(Lexer):
     ID['while']             = WHILE
     ID['__int128']          = INT128
 
+    ID['_Alignas']          = ALIGNAS_
+    ID['_Alignof']          = ALIGNOF_
+    ID['_Atomic']           = ATOMIC_
     ID['_Bool']             = BOOL_
     ID['_Complex']          = COMPLEX_
     ID['_Noreturn']         = NORETURN_
-    ID['_Thread_local']     = THREAD_LOCAL_
-    ID['_Static_assert']    = STATIC_ASSERT_
-    ID['_Atomic']           = ATOMIC_
-    ID['_Alignof']          = ALIGNOF_
-    ID['_Alignas']          = ALIGNAS_
     ID['_Pragma']           = PRAGMA_
+    ID['_Static_assert']    = STATIC_ASSERT_
+    ID['_Thread_local']     = THREAD_LOCAL_
     # fmt: on
 
     def ID(self, t: Token) -> Token:
-        # valid C identifiers (K&R2: A.2.3), plus '$' (supported by some compilers)
         if self.scope_stack.get(t.value, False):
             t.type = 'TYPEID'
+        return t
+
+    @_(r'\{')
+    def lbrace(self, t: Token) -> Token:
+        t.type = '{'
+        self.create_scope()
+        return t
+
+    @_(r'\}')
+    def rbrace(self, t: Token) -> Token:
+        t.type = '}'
+        self.pop_scope()
         return t
 
     @_(r'\n+')
@@ -356,6 +371,12 @@ class CLexer(Lexer):
         self.filename: str = ''
         self.pp_line: str | None = None
         self.pp_filename: str | None = None
+
+    def create_scope(self) -> None:
+        self.scope_stack = self.scope_stack.new_child()
+
+    def pop_scope(self) -> None:
+        self.scope_stack = self.scope_stack.parents
 
 
 class PreprocessorLineLexer(Lexer):
@@ -427,8 +448,3 @@ class PreprocessorPragmaLexer(Lexer):
         column = _find_token_column(self.text, t)
         msg = msg or f'invalid #pragma directive {t.value}'
         raise CLexError(msg, t.value, (self.lineno, column))
-
-    def __init__(self):
-        self.filename: str = ''
-        self.pp_line: str | None = None
-        self.pp_filename: str | None = None

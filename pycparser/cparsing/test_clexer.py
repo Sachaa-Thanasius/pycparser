@@ -4,7 +4,7 @@ from collections import ChainMap
 
 import pytest
 
-from pycparser.sly.cparsing.clexer import CLexer
+from pycparser.cparsing.clexer import CLexer
 
 
 @pytest.fixture
@@ -147,22 +147,6 @@ def test_hexadecimal_floating_constants(clex: CLexer, test_input: str, expected:
 )
 def test_char_constants(clex: CLexer, test_input: str, expected: list[str]) -> None:
     assert do_lex(clex, test_input) == expected
-
-
-# def test_on_rbrace_lbrace(self):
-#     braces = []
-
-#     def on_lbrace():
-#         braces.append('{')
-
-#     def on_rbrace():
-#         braces.append('}')
-
-#     clex = CLexer(self.error_func, on_lbrace, on_rbrace, self.type_lookup_func)
-#     clex.build(optimize=False)
-#     clex.input('hello { there } } and again }}{')
-#     token_list(clex)
-#     self.assertEqual(braces, ['{', '}', '}', '}', '}', '{'])
 
 
 @pytest.mark.parametrize(

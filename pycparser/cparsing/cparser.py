@@ -6,8 +6,8 @@ from collections import ChainMap
 from typing import TYPE_CHECKING, Any
 
 from pycparser import c_ast
+from pycparser.cparsing.clexer import CLexer
 from pycparser.sly import Parser
-from pycparser.sly.cparsing.clexer import CLexer
 
 if TYPE_CHECKING:
     from typing import Callable, Protocol, TypeVar, cast
@@ -48,7 +48,7 @@ class Coord:
         except KeyError:
             col_span = (-1, 0)
 
-        return cls('filename', lineno, col_span)
+        return cls('', lineno, col_span)
 
     def __str__(self):
         return f"{self.filename}:{self.lineno}:{self.col_span}"
@@ -99,9 +99,10 @@ def _fix_atomic_specifiers_once(decl: Any) -> tuple[Any, bool]:
     """Performs one 'fix' round of atomic specifiers.
     Returns (modified_decl, found) where found is True iff a fix was made.
     """
+
     parent = decl
-    grandparent = None
-    node = decl.type
+    grandparent: Any = None
+    node: Any = decl.type
     while node is not None:
         if isinstance(node, c_ast.Typename) and '_Atomic' in node.quals:
             break
@@ -134,12 +135,6 @@ class CParser(Parser):
 
     def __init__(self, scope_stack: ChainMap[str, bool]):
         self.scope_stack: ChainMap[str, bool] = scope_stack
-
-    def create_scope(self) -> None:
-        self.scope_stack = self.scope_stack.new_child()
-
-    def pop_scope(self) -> None:
-        self.scope_stack = self.scope_stack.parents
 
     def _is_type_in_scope(self, name: str) -> bool:
         return self.scope_stack.get(name, False)
@@ -364,8 +359,6 @@ class CParser(Parser):
             modifier_tail.type = decl_tail.type
             decl_tail.type = modifier_head
             return decl
-
-    def _get_yacc_lookahead_token(self, *args: Any, **kwargs: Any) -> Any: ...
 
     def _fix_decl_name_type(self, decl: Any, typename: Any) -> Any:
         """Fixes a declaration. Modifies decl."""
@@ -808,26 +801,22 @@ class CParser(Parser):
         # None means no list of members
         return klass(name=p[1], decls=None, coord=Coord.from_prod(self, p, 2))
 
-    @_('struct_or_union "{" new_scope struct_declaration { struct_declaration } "}"')
+    @_('struct_or_union "{" struct_declaration { struct_declaration } "}"')
     def struct_or_union_specifier(self, p: Any):
         klass = c_ast.Struct if (p.struct_or_union == 'struct') else c_ast.Union
         # Empty sequence means an empty list of members
         coord = Coord.from_prod(self, p, 2)
-        node = klass(name=None, decls=[p.struct_declaration0, *p.struct_declaration1], coord=coord)
-        self.pop_scope()
-        return node
+        return klass(name=None, decls=[p.struct_declaration0, *p.struct_declaration1], coord=coord)
 
     @_(
-        'struct_or_union ID "{" new_scope struct_declaration { struct_declaration } "}"',
-        'struct_or_union TYPEID "{" new_scope struct_declaration { struct_declaration } "}"',
+        'struct_or_union ID "{" struct_declaration { struct_declaration } "}"',
+        'struct_or_union TYPEID "{" struct_declaration { struct_declaration } "}"',
     )
     def struct_or_union_specifier(self, p: Any):
         klass = c_ast.Struct if (p.struct_or_union == 'struct') else c_ast.Union
         # Empty sequence means an empty list of members
         coord = Coord.from_prod(self, p, 2)
-        node = klass(name=p[1], decls=[p.struct_declaration0, *p.struct_declaration1], coord=coord)
-        self.pop_scope()
-        return node
+        return klass(name=p[1], decls=[p.struct_declaration0, *p.struct_declaration1], coord=coord)
 
     @_('STRUCT', 'UNION')
     def struct_or_union(self, p: Any):
@@ -895,20 +884,16 @@ class CParser(Parser):
     def enum_specifier(self, p: Any):
         return c_ast.Enum(p[1], None, Coord.from_prod(self, p, 1))
 
-    @_('ENUM "{" new_scope enumerator_list "}"')
+    @_('ENUM "{" enumerator_list "}"')
     def enum_specifier(self, p: Any):
-        node = c_ast.Enum(None, p.enumerator_list, Coord.from_prod(self, p, 1))
-        self.pop_scope()
-        return node
+        return c_ast.Enum(None, p.enumerator_list, Coord.from_prod(self, p, 1))
 
     @_(
-        'ENUM ID "{" new_scope enumerator_list "}"',
-        'ENUM TYPEID "{" new_scope enumerator_list "}"',
+        'ENUM ID "{" enumerator_list "}"',
+        'ENUM TYPEID "{" enumerator_list "}"',
     )
     def enum_specifier(self, p: Any):
-        node = c_ast.Enum(p[1], p.enumerator_list, Coord.from_prod(self, p, 1))
-        self.pop_scope()
-        return node
+        return c_ast.Enum(p[1], p.enumerator_list, Coord.from_prod(self, p, 1))
 
     @_('enumerator')
     def enumerator_list(self, p: Any):
@@ -1027,7 +1012,7 @@ class CParser(Parser):
     def direct_id_declarator(self, p: Any):
         func = c_ast.FuncDecl(args=p[2], type=None, coord=p[0].coord)
 
-        # To see why _get_yacc_lookahead_token is needed, consider:
+        # To see why the lookahead token is needed, consider:
         #   typedef char TT;
         #   void foo(int TT) { TT = 10; }
         # Outside the function, TT is a typedef, but inside (starting and
@@ -1038,7 +1023,7 @@ class CParser(Parser):
         # and incorrectly interpreted as TYPEID.  We need to add the
         # parameters to the scope the moment the lexer sees LBRACE.
         #
-        if self._get_yacc_lookahead_token().type == "{" and func.args is not None:
+        if self.lookahead.type == "{" and func.args is not None:
             for param in func.args.params:
                 if isinstance(param, c_ast.EllipsisParam):
                     break
@@ -1107,7 +1092,7 @@ class CParser(Parser):
     def direct_typeid_declarator(self, p: Any):
         func = c_ast.FuncDecl(args=p[2], type=None, coord=p[0].coord)
 
-        # To see why _get_yacc_lookahead_token is needed, consider:
+        # To see why the lookahead token is needed, consider:
         #   typedef char TT;
         #   void foo(int TT) { TT = 10; }
         # Outside the function, TT is a typedef, but inside (starting and
@@ -1118,7 +1103,7 @@ class CParser(Parser):
         # and incorrectly interpreted as TYPEID.  We need to add the
         # parameters to the scope the moment the lexer sees LBRACE.
         #
-        if self._get_yacc_lookahead_token().type == "{" and func.args is not None:
+        if self.lookahead.type == "{" and func.args is not None:
             for param in func.args.params:
                 if isinstance(param, c_ast.EllipsisParam):
                     break
@@ -1183,7 +1168,7 @@ class CParser(Parser):
     def direct_typeid_noparen_declarator(self, p: Any):
         func = c_ast.FuncDecl(args=p[2], type=None, coord=p[0].coord)
 
-        # To see why _get_yacc_lookahead_token is needed, consider:
+        # To see why the lookahead token is needed, consider:
         #   typedef char TT;
         #   void foo(int TT) { TT = 10; }
         # Outside the function, TT is a typedef, but inside (starting and
@@ -1194,7 +1179,7 @@ class CParser(Parser):
         # and incorrectly interpreted as TYPEID.  We need to add the
         # parameters to the scope the moment the lexer sees "{".
         #
-        if self._get_yacc_lookahead_token().type == "{" and func.args is not None:
+        if self.lookahead.type == "{" and func.args is not None:
             for param in func.args.params:
                 if isinstance(param, c_ast.EllipsisParam):
                     break
@@ -1309,17 +1294,14 @@ class CParser(Parser):
         return p.assignment_expression
 
     @_(
-        '"{" new_scope [ initializer_list ] "}"',
-        '"{" new_scope initializer_list "," "}"',
+        '"{" [ initializer_list ] "}"',
+        '"{" initializer_list "," "}"',
     )
     def initializer(self, p: Any):
         if p.initializer_list is None:
-            node = c_ast.InitList([], Coord.from_prod(self, p, 1))
+            return c_ast.InitList([], Coord.from_prod(self, p, 1))
         else:
-            node = p.initializer_list
-
-        self.pop_scope()
-        return node
+            return p.initializer_list
 
     @_('[ designation ] initializer { "," [ designation ] initializer }')
     def initializer_list(self, p: Any):
@@ -1445,14 +1427,12 @@ class CParser(Parser):
         else:
             return [item]
 
-    @_('"{" new_scope { block_item } "}"')
+    @_('"{" { block_item } "}"')
     def compound_statement(self, p: Any):
         # Since we made block_item a list, this just combines lists
         # Empty block items (plain ';') produce [None], so ignore them
         block_items = [item for item_list in p.block_item for item in item_list if item is not None]
-        node = c_ast.Compound(block_items=block_items, coord=Coord.from_prod(self, p, 1))
-        self.pop_scope()
-        return node
+        return c_ast.Compound(block_items=block_items, coord=Coord.from_prod(self, p, 1))
 
     @_('ID ":" pragmacomp_or_statement')
     def labeled_statement(self, p: Any):
@@ -1667,11 +1647,9 @@ class CParser(Parser):
     def postfix_expression(self, p: Any):
         return c_ast.UnaryOp('p' + p[1], p.postfix_expression, p[1].coord)
 
-    @_('"(" type_name ")" "{" new_scope initializer_list [ "," ] "}"')
+    @_('"(" type_name ")" "{" initializer_list [ "," ] "}"')
     def postfix_expression(self, p: Any):
-        node = c_ast.CompoundLiteral(p.type_name, p.initializer_list)
-        self.pop_scope()
-        return node
+        return c_ast.CompoundLiteral(p.type_name, p.initializer_list)
 
     @_('identifier', 'constant', 'unified_string_literal', 'unified_wstring_literal')
     def primary_expression(self, p: Any):
@@ -1776,10 +1754,6 @@ class CParser(Parser):
         return p.unified_wstring_literal
 
     # ===============================================================================================
-
-    @_('')
-    def new_scope(self, p: Any):
-        self.create_scope()
 
     def error(self, token: Any):
         if token:
