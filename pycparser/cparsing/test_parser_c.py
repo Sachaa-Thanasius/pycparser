@@ -5,13 +5,12 @@ from collections import ChainMap
 from typing import Any, Sequence
 
 from pycparser import c_ast
-from pycparser.cparsing import clexer, cparser
+from pycparser.cparsing.lexer_c import CLexer
+from pycparser.cparsing.parser_c import Coord, CParser
 
-Coord = cparser.Coord
-
-scope_map: ChainMap[str, bool] = ChainMap()
-test_clexer = clexer.CLexer(scope_map)
-test_cparser = cparser.CParser(scope_map)
+scope_stack: ChainMap[str, bool] = ChainMap()
+test_clexer = CLexer(scope_stack)
+test_cparser = CParser(scope_stack)
 
 
 # ======== Helper functions.

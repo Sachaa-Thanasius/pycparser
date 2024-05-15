@@ -4,7 +4,7 @@ from collections import ChainMap
 
 import pytest
 
-from pycparser.cparsing.clexer import CLexer
+from pycparser.cparsing.lexer_c import CLexer
 
 
 @pytest.fixture

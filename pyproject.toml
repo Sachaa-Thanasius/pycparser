@@ -79,8 +79,8 @@ keep-runtime-typing = true
 quote-style = "preserve"
 
 [tool.pyright]
-include = ["pycparser/sly/cparsing"]
-exclude = ["pycparser/sly/cparsing/cparser.py"]
+include = ["pycparser/cparsing"]
+# exclude = ["pycparser/cparsing/cparser.py"]
 pythonVersion = "3.8"
 typeCheckingMode = "strict"
 

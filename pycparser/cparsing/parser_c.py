@@ -1,12 +1,9 @@
 # pyright: reportRedeclaration=none, reportUndefinedVariable=none
 # ruff: noqa: ANN201, F811, F821, S105, RET505
-from __future__ import annotations
-
-from collections import ChainMap
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ChainMap, Dict, List, Optional, Tuple
 
 from pycparser import c_ast
-from pycparser.cparsing.clexer import CLexer
+from pycparser.cparsing.lexer_c import CLexer
 from pycparser.sly import Parser
 
 if TYPE_CHECKING:
@@ -25,19 +22,19 @@ else:
 
     class Self:
         def __repr__(self):
-            return "<placeholder for typing.Self>"
+            return f"<placeholder for {super().__repr__()}>"
 
 
 class Coord:
     __slots__ = ('filename', 'lineno', 'col_span', '__weakref__')
 
-    def __init__(self, filename: str, lineno: int, col_span: tuple[int, int]):
+    def __init__(self, filename: str, lineno: int, col_span: Tuple[int, int]):
         self.filename = filename
         self.lineno = lineno
         self.col_span = col_span
 
     @classmethod
-    def from_prod(cls, parser: Parser, p: Any, tokenpos: int | None = None) -> Self:
+    def from_prod(cls, parser: Parser, p: Any, tokenpos: Optional[int] = None) -> Self:
         try:
             lineno = parser.line_position(p)
         except KeyError:
@@ -95,7 +92,7 @@ def fix_atomic_specifiers(decl: Any):
     return decl
 
 
-def _fix_atomic_specifiers_once(decl: Any) -> tuple[Any, bool]:
+def _fix_atomic_specifiers_once(decl: Any) -> Tuple[Any, bool]:
     """Performs one 'fix' round of atomic specifiers.
     Returns (modified_decl, found) where found is True iff a fix was made.
     """
@@ -153,7 +150,7 @@ class CParser(Parser):
             raise CParseError(f"{coord}: Typedef {name!r} previously declared as non-typedef in this scope")
         self.scope_stack[name] = True
 
-    def _build_function_definition(self, spec: dict[str, list[Any]], decl: Any, param_decls: Any, body: Any) -> Any:
+    def _build_function_definition(self, spec: Dict[str, List[Any]], decl: Any, param_decls: Any, body: Any) -> Any:
         """Builds a function definition."""
 
         if 'typedef' in spec['storage']:
@@ -167,7 +164,7 @@ class CParser(Parser):
 
         return c_ast.FuncDef(decl=declaration, param_decls=param_decls, body=body, coord=decl.coord)
 
-    def _build_declarations(self, spec: dict[str, list[Any]], decls: Any, typedef_namespace: bool = False) -> Any:
+    def _build_declarations(self, spec: Dict[str, List[Any]], decls: Any, typedef_namespace: bool = False) -> Any:
         """Builds a list of declarations all sharing the given specifiers.
 
         If typedef_namespace is true, each declared name is added to the "typedef namespace", which also includes
@@ -261,12 +258,12 @@ class CParser(Parser):
 
     def _add_declaration_specifier(
         self,
-        declspec: dict[str, list[Any]] | None,
+        declspec: Optional[Dict[str, List[Any]]],
         newspec: Any,
         kind: str,
         *,
         append: bool = False,
-    ) -> dict[str, list[Any]]:
+    ) -> Dict[str, List[Any]]:
         """Declaration specifiers are represented by a dictionary with the entries:
         * qual: a list of type qualifiers
         * storage: a list of storage type qualifiers
@@ -436,7 +433,7 @@ class CParser(Parser):
         return [p[0]]
 
     @_('";"')
-    def external_declaration(self, p: Any) -> list[Any]:
+    def external_declaration(self, p: Any) -> List[Any]:
         return []
 
     @_('static_assert')
@@ -752,7 +749,7 @@ class CParser(Parser):
         return [p.id_init_declarator0, *p.init_declarator1]
 
     @_('id_declarator [ EQUALS initializer ]')
-    def id_init_declarator(self, p: Any) -> dict[str, Any]:
+    def id_init_declarator(self, p: Any) -> Dict[str, Any]:
         return {"decl": p.id_declarator, "init": p.initializer}
 
     # Require at least one type specifier in a specifier-qualifier-list
@@ -1420,7 +1417,7 @@ class CParser(Parser):
     # will always be a list
     #
     @_('declaration', 'statement')
-    def block_item(self, p: Any) -> list[Any]:
+    def block_item(self, p: Any) -> List[Any]:
         item = p[0]
         if isinstance(item, list):
             return item

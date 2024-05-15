@@ -1,10 +1,7 @@
 # pyright: reportUndefinedVariable=none, reportIndexIssue=none
 # ruff: noqa: RUF012, F821
-from __future__ import annotations
-
 import re
-from collections import ChainMap
-from typing import TYPE_CHECKING, Callable, NoReturn
+from typing import TYPE_CHECKING, Callable, ChainMap, NoReturn, Optional, Set, Tuple
 
 from pycparser.sly import Lexer
 from pycparser.sly.lex import Token
@@ -19,6 +16,15 @@ if TYPE_CHECKING:
 
     # Typing hack to account for _ existing in a Lexer class's namespace only during class creation.
     _ = cast(_RuleDecorator, object())
+
+
+class CLexError(Exception):
+    """Exception raised when the CLexer can't handle an invalid token."""
+
+    def __init__(self, message: str, text: str, error_coords: Tuple[int, int]):
+        super().__init__(message)
+        self.text = text
+        self.error_coords = error_coords
 
 
 _line_pattern = re.compile(r'([ \t]*line\W)|([ \t]*\d+)')
@@ -89,26 +95,17 @@ def _find_token_column(text: str, t: Token) -> int:
     return t.index - last_cr
 
 
-class CLexError(Exception):
-    """Exception raised when the CLexer can't handle an invalid token."""
-
-    def __init__(self, message: str, text: str, error_coords: tuple[int, int]):
-        super().__init__(message)
-        self.text = text
-        self.error_coords = error_coords
-
-
 class CLexer(Lexer):
     # ==== Reserved keywords
     # fmt: off
-    keywords: set[str] = {
+    keywords: Set[str] = {
         AUTO, BREAK, CASE, CHAR, CONST, CONTINUE, DEFAULT, DO, DOUBLE, ELSE, ENUM,
         EXTERN, FLOAT, FOR, GOTO, IF, INLINE, INT, LONG, REGISTER, OFFSETOF,
         RESTRICT, RETURN, SHORT, SIGNED, SIZEOF, STATIC, STRUCT, SWITCH, TYPEDEF,
         UNION, UNSIGNED, VOID, VOLATILE, WHILE, INT128,
     }
 
-    keywords_new: set[str] = {
+    keywords_new: Set[str] = {
         ALIGNAS_, ALIGNOF_, ATOMIC_, BOOL_, COMPLEX_, NORETURN_, PRAGMA_,
         STATIC_ASSERT_, THREAD_LOCAL_,
     }
@@ -171,7 +168,7 @@ class CLexer(Lexer):
     # ==== The rest of the tokens
 
     @_(r'[ \t]*\#')
-    def PP_HASH(self, t: Token) -> Token | None:
+    def PP_HASH(self, t: Token) -> Optional[Token]:
         if _line_pattern.match(self.text, pos=t.end):
             self.push_state(PreprocessorLineLexer)
             self.pp_line = None
@@ -361,7 +358,7 @@ class CLexer(Lexer):
     def ignore_newline(self, t: Token) -> None:
         self.lineno += t.value.count('\n')
 
-    def error(self, t: Token, msg: str | None = None) -> NoReturn:
+    def error(self, t: Token, msg: Optional[str] = None) -> NoReturn:
         column = _find_token_column(self.text, t)
         msg = msg or f'(Line, Column) {self.lineno}, {column}: Bad character {t.value[0]!r}'
         raise CLexError(msg, t.value, (self.lineno, column))
@@ -369,8 +366,8 @@ class CLexer(Lexer):
     def __init__(self, scope_stack: ChainMap[str, bool]):
         self.scope_stack: ChainMap[str, bool] = scope_stack
         self.filename: str = ''
-        self.pp_line: str | None = None
-        self.pp_filename: str | None = None
+        self.pp_line: Optional[str] = None
+        self.pp_filename: Optional[str] = None
 
     def create_scope(self) -> None:
         self.scope_stack = self.scope_stack.new_child()
@@ -416,15 +413,15 @@ class PreprocessorLineLexer(Lexer):
 
         self.pop_state()
 
-    def error(self, t: Token, msg: str | None = None) -> NoReturn:
+    def error(self, t: Token, msg: Optional[str] = None) -> NoReturn:
         column = _find_token_column(self.text, t)
         msg = msg or f'invalid #line directive {t.value}'
         raise CLexError(msg, t.value, (self.lineno, column))
 
     def __init__(self):
         self.filename: str = ''
-        self.pp_line: str | None = None
-        self.pp_filename: str | None = None
+        self.pp_line: Optional[str] = None
+        self.pp_filename: Optional[str] = None
 
 
 class PreprocessorPragmaLexer(Lexer):
@@ -444,7 +441,7 @@ class PreprocessorPragmaLexer(Lexer):
         self.lineno += 1
         self.pop_state()
 
-    def error(self, t: Token, msg: str | None = None) -> NoReturn:
+    def error(self, t: Token, msg: Optional[str] = None) -> NoReturn:
         column = _find_token_column(self.text, t)
         msg = msg or f'invalid #pragma directive {t.value}'
         raise CLexError(msg, t.value, (self.lineno, column))
