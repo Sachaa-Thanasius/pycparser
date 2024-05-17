@@ -1,5 +1,5 @@
 [tool.ruff]
-include = ["pycparser/*"]
+include = ["cparsing/*"]
 line-length = 120
 target-version = "py38"
 
@@ -39,6 +39,7 @@ select = [
 ]
 extend-ignore = [
     "S101",   # Use of assert here is a known quantity. Blame typing memes.
+    "SIM105", # contextlib.suppress is a stylistic choice with additional overhead.
     "C90",    # McCabe complexity memes.
     "PD011",  # Erroneous issue that triggers for any .values attribute access at all.
     "S311",   # No need for cryptographically secure random number generation in this use case.
@@ -63,6 +64,7 @@ extend-ignore = [
     "EM101",
     "EM102",
     "SIM108", # Don't always use ternary, for the sake of readability.
+    "RET505", # Allow returns in else and elif for readability.
     "ERA001", # Commented code.
 ]
 unfixable = [
@@ -71,6 +73,10 @@ unfixable = [
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F403", "PLC0414"] # Star import usually throws these.
+"cparsing/tests/*" = [
+    "T201",   # Allow printing.
+    "ANN201", # Allow lack of return annotations. Tests return None usually.
+]
 
 [tool.ruff.lint.pyupgrade]
 keep-runtime-typing = true
@@ -79,8 +85,7 @@ keep-runtime-typing = true
 quote-style = "preserve"
 
 [tool.pyright]
-include = ["pycparser/cparsing"]
-# exclude = ["pycparser/cparsing/cparser.py"]
+include = ["cparsing"]
 pythonVersion = "3.8"
 typeCheckingMode = "strict"
 

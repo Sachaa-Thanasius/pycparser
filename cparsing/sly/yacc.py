@@ -51,7 +51,7 @@ from typing import (
     cast,
 )
 
-from pycparser.sly.lex import Token
+from cparsing.sly.lex import Token
 
 CallableT = TypeVar("CallableT", bound=Callable[..., Any])
 
@@ -2244,6 +2244,9 @@ class Parser(metaclass=ParserMeta):
                             sym.lineno = None
                             sym.index = None
                             sym.end = None
+                        # print("==========================================================")
+                        # print(f"{value=}")
+                        # print(f"lineno={sym.lineno}", f"col={(sym.index, sym.end)}")
                         self._line_positions[id(value)] = sym.lineno
                         self._index_positions[id(value)] = (sym.index, sym.end)
 

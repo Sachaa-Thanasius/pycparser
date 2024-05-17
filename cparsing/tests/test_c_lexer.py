@@ -1,10 +1,9 @@
-from __future__ import annotations
-
 from collections import ChainMap
+from typing import List
 
 import pytest
 
-from pycparser.cparsing.lexer_c import CLexer
+from cparsing.c_lexer import CLexer
 
 
 @pytest.fixture
@@ -13,7 +12,7 @@ def clex() -> CLexer:
     return CLexer(scope_stack)
 
 
-def do_lex(lexer: CLexer, inp: str) -> list[str]:
+def do_lex(lexer: CLexer, inp: str) -> List[str]:
     return [tok.type for tok in lexer.tokenize(inp)]
 
 
@@ -31,7 +30,7 @@ def do_lex(lexer: CLexer, inp: str) -> list[str]:
         ('i ^= 1;', ['ID', 'XOREQUAL', 'INT_CONST_DEC', ';']),
     ],
 )
-def test_trivial_tokens(clex: CLexer, test_input: str, expected: list[str]) -> None:
+def test_trivial_tokens(clex: CLexer, test_input: str, expected: List[str]):
     assert do_lex(clex, test_input) == expected
 
 
@@ -43,7 +42,7 @@ def test_trivial_tokens(clex: CLexer, test_input: str, expected: list[str]) -> N
         ('mytype var', ['TYPEID', 'ID']),
     ],
 )
-def test_id_typeid(clex: CLexer, test_input: str, expected: list[str]) -> None:
+def test_id_typeid(clex: CLexer, test_input: str, expected: List[str]):
     # Assumes {'mytype': True} is in the scope stack. See the clex fixture.
     assert do_lex(clex, test_input) == expected
 
@@ -74,12 +73,12 @@ def test_id_typeid(clex: CLexer, test_input: str, expected: list[str]) -> None:
         ('-1', ['MINUS', 'INT_CONST_DEC']),  # - is MINUS, the rest a constnant
     ],
 )
-def test_integer_constants(clex: CLexer, test_input: str, expected: list[str]) -> None:
+def test_integer_constants(clex: CLexer, test_input: str, expected: List[str]):
     assert do_lex(clex, test_input) == expected
 
 
 @pytest.mark.parametrize(("test_input", "expected"), [('sizeof offsetof', ['SIZEOF', 'OFFSETOF'])])
-def test_special_names(clex: CLexer, test_input: str, expected: list[str]) -> None:
+def test_special_names(clex: CLexer, test_input: str, expected: List[str]):
     assert do_lex(clex, test_input) == expected
 
 
@@ -91,7 +90,7 @@ def test_special_names(clex: CLexer, test_input: str, expected: list[str]) -> No
         ('_Alignas _Alignof', ['ALIGNAS_', 'ALIGNOF_']),
     ],
 )
-def test_new_keywords(clex: CLexer, test_input: str, expected: list[str]) -> None:
+def test_new_keywords(clex: CLexer, test_input: str, expected: List[str]):
     assert do_lex(clex, test_input) == expected
 
 
@@ -111,7 +110,7 @@ def test_new_keywords(clex: CLexer, test_input: str, expected: list[str]) -> Non
         ('0x0666e+3', ['INT_CONST_HEX', 'PLUS', 'INT_CONST_DEC']),  # but this is a hex integer + 3
     ],
 )
-def test_floating_constants(clex: CLexer, test_input: str, expected: list[str]) -> None:
+def test_floating_constants(clex: CLexer, test_input: str, expected: List[str]):
     assert do_lex(clex, test_input) == expected
 
 
@@ -123,7 +122,7 @@ def test_floating_constants(clex: CLexer, test_input: str, expected: list[str]) 
         ('0X12.P0', ['HEX_FLOAT_CONST']),
     ],
 )
-def test_hexadecimal_floating_constants(clex: CLexer, test_input: str, expected: list[str]) -> None:
+def test_hexadecimal_floating_constants(clex: CLexer, test_input: str, expected: List[str]):
     assert do_lex(clex, test_input) == expected
 
 
@@ -145,7 +144,7 @@ def test_hexadecimal_floating_constants(clex: CLexer, test_input: str, expected:
         (r"""L'\xaf'""", ['WCHAR_CONST']),
     ],
 )
-def test_char_constants(clex: CLexer, test_input: str, expected: list[str]) -> None:
+def test_char_constants(clex: CLexer, test_input: str, expected: List[str]):
     assert do_lex(clex, test_input) == expected
 
 
@@ -174,7 +173,7 @@ def test_char_constants(clex: CLexer, test_input: str, expected: list[str]) -> N
         (r'"fo\9999999"', ['STRING_LITERAL']),
     ],
 )
-def test_string_literal(clex: CLexer, test_input: str, expected: list[str]) -> None:
+def test_string_literal(clex: CLexer, test_input: str, expected: List[str]):
     assert do_lex(clex, test_input) == expected
 
 
@@ -207,7 +206,7 @@ def test_string_literal(clex: CLexer, test_input: str, expected: list[str]) -> N
         (r'++--->?.,;:', ['PLUSPLUS', 'MINUSMINUS', 'ARROW', 'CONDOP', '.', ',', ';', ':']),
     ],
 )
-def test_mess(clex: CLexer, test_input: str, expected: list[str]) -> None:
+def test_mess(clex: CLexer, test_input: str, expected: List[str]):
     assert do_lex(clex, test_input) == expected
 
 
@@ -229,7 +228,7 @@ def test_mess(clex: CLexer, test_input: str, expected: list[str]) -> None:
         ('a+++b', ['ID', 'PLUSPLUS', 'PLUS', 'ID']),
     ],
 )
-def test_exprs(clex: CLexer, test_input: str, expected: list[str]) -> None:
+def test_exprs(clex: CLexer, test_input: str, expected: List[str]):
     assert do_lex(clex, test_input) == expected
 
 
@@ -291,11 +290,11 @@ def test_exprs(clex: CLexer, test_input: str, expected: list[str]) -> None:
         ),
     ],
 )
-def test_statements(clex: CLexer, test_input: str, expected: list[str]) -> None:
+def test_statements(clex: CLexer, test_input: str, expected: List[str]):
     assert do_lex(clex, test_input) == expected
 
 
-def test_preprocessor_line(clex: CLexer) -> None:
+def test_preprocessor_line(clex: CLexer):
     assert do_lex(clex, '#abracadabra') == ['PP_HASH', 'ID']
 
     test_input = r"""
@@ -348,7 +347,7 @@ def test_preprocessor_line(clex: CLexer) -> None:
     assert clex.filename == r'include/me.h'
 
 
-def test_preprocessor_line_funny(clex: CLexer) -> None:
+def test_preprocessor_line_funny(clex: CLexer):
     test_input = r'''
     #line 10 "..\6\joe.h"
     10
@@ -363,7 +362,7 @@ def test_preprocessor_line_funny(clex: CLexer) -> None:
     assert clex.filename == r'..\6\joe.h'
 
 
-def test_preprocessor_pragma(clex: CLexer) -> None:
+def test_preprocessor_pragma(clex: CLexer):
     test_input = '''
     42
     #pragma

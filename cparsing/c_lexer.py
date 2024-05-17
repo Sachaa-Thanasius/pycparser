@@ -3,8 +3,8 @@
 import re
 from typing import TYPE_CHECKING, Callable, ChainMap, NoReturn, Optional, Set, Tuple
 
-from pycparser.sly import Lexer
-from pycparser.sly.lex import Token
+from cparsing.sly import Lexer
+from cparsing.sly.lex import Token
 
 if TYPE_CHECKING:
     from typing import Any, Protocol, TypeVar, cast
@@ -16,6 +16,9 @@ if TYPE_CHECKING:
 
     # Typing hack to account for _ existing in a Lexer class's namespace only during class creation.
     _ = cast(_RuleDecorator, object())
+
+
+__all__ = ("CLexError", "CLexer")
 
 
 class CLexError(Exception):
@@ -175,7 +178,7 @@ class CLexer(Lexer):
             self.pp_filename = None
             return None
 
-        elif _pragma_pattern.match(self.text, pos=t.end):  # noqa: RET505
+        elif _pragma_pattern.match(self.text, pos=t.end):
             self.push_state(PreprocessorPragmaLexer)
             return None
 

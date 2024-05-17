@@ -1,11 +1,12 @@
-# ruff: noqa: T201
 from __future__ import annotations
 
 import io
 from collections import deque
 from contextlib import contextmanager
 from types import GeneratorType
-from typing import TYPE_CHECKING, Any, ClassVar, Generator, Optional, Union
+from typing import Any, Generator, Optional, Union
+
+from cparsing.utils import Dataclass
 
 
 class Coord:
@@ -13,60 +14,26 @@ class Coord:
         return "Coord()"
 
 
-class AST:
-    __slots__ = ("__weakref__", "coord")
-
-    if TYPE_CHECKING:
-        _fields: ClassVar[tuple[str, ...]]
-
-    def __init__(self):
-        self.coord: Coord | None = None
+class AST(Dataclass, kw_only=True, weakref_slot=True):
+    coord: Coord | None = None
 
 
 class Number(AST):
-    __slots__ = ("value",)
-    __match_args__ = ("value",)
-
-    _fields = ("value",)
-
-    def __init__(self, value: int, *, coord: Coord | None = None):
-        self.value: int = value
-        self.coord = coord
+    value: int
 
 
 class NegNumber(AST):
-    __slots__ = ("value",)
-    __match_args__ = ("value",)
-
-    _fields = ("value",)
-
-    def __init__(self, value: int, *, coord: Coord | None = None):
-        self.value: int = value
-        self.coord = coord
+    value: int
 
 
 class BinOp(AST):
-    __slots__ = ("op", "left", "right")
-    __match_args__ = ("op", "left", "right")
-
-    _fields = ("op", "left", "right")
-
-    def __init__(self, op: str, left: AST, right: AST, *, coord: Coord | None = None):
-        self.op: str = op
-        self.left: AST = left
-        self.right: AST = right
-        self.coord = coord
+    op: str
+    left: AST
+    right: AST
 
 
 class NumberTuple(AST):
-    __slots__ = ("members",)
-    __match_args__ = ("members",)
-
-    _fields = ("members",)
-
-    def __init__(self, members: list[Number], *, coord: Coord | None = None):
-        self.members = members
-        self.coord = coord
+    members: list[Number]
 
 
 class NodeVisitor:

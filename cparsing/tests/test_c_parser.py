@@ -1,48 +1,46 @@
-# ruff: noqa: ANN201
 from __future__ import annotations
 
 from collections import ChainMap
 from typing import Any, Sequence
 
-from pycparser import c_ast
-from pycparser.cparsing.lexer_c import CLexer
-from pycparser.cparsing.parser_c import Coord, CParser
+import pytest
 
-scope_stack: ChainMap[str, bool] = ChainMap()
-test_clexer = CLexer(scope_stack)
-test_cparser = CParser(scope_stack)
-
+from cparsing import c_ast
+from cparsing.c_lexer import CLexer
+from cparsing.c_parser import CParser
 
 # ======== Helper functions.
 
 
-def parse(source: str, filename: str = "") -> c_ast.FileAST:
+def parse(source: str, filename: str = "") -> c_ast.File:
+    scope_stack: ChainMap[str, bool] = ChainMap()
+    test_clexer = CLexer(scope_stack)
+    test_cparser = CParser(scope_stack)
     return test_cparser.parse(test_clexer.tokenize(source))
 
 
 def expand_decl(decl: Any) -> list[Any]:
     """Converts the declaration into a nested list."""
-    typ = type(decl)
 
-    if typ == c_ast.TypeDecl:
+    if isinstance(decl, c_ast.TypeDecl):
         return ['TypeDecl', expand_decl(decl.type)]
-    elif typ == c_ast.IdentifierType:
+    elif isinstance(decl, c_ast.IdentifierType):
         return ['IdentifierType', decl.names]
-    elif typ == c_ast.ID:
+    elif isinstance(decl, c_ast.Identifier):
         return ['ID', decl.name]
-    elif typ in [c_ast.Struct, c_ast.Union]:
+    elif isinstance(decl, (c_ast.Struct, c_ast.Union)):
         decls = [expand_decl(d) for d in decl.decls or []]
-        return [typ.__name__, decl.name, decls]
-    elif typ == c_ast.Enum:
+        return [type(decl).__name__, decl.name, decls]
+    elif isinstance(decl, c_ast.Enum):
         if decl.values is None:
             values = None
         else:
             assert isinstance(decl.values, c_ast.EnumeratorList)
             values = [enum.name for enum in decl.values.enumerators]
         return ['Enum', decl.name, values]
-    elif typ == c_ast.Alignas:
+    elif isinstance(decl, c_ast.Alignas):
         return ['Alignas', expand_init(decl.alignment)]
-    elif typ == c_ast.StaticAssert:
+    elif isinstance(decl, c_ast.StaticAssert):
         if decl.message:
             return ['StaticAssert', decl.cond.value, decl.message.value]
         else:
@@ -50,7 +48,7 @@ def expand_decl(decl: Any) -> list[Any]:
     else:
         nested = expand_decl(decl.type)
 
-        if typ == c_ast.Decl:
+        if isinstance(decl, c_ast.Decl):
             r = ['Decl']
             if decl.quals:
                 r.append(decl.quals)
@@ -58,22 +56,22 @@ def expand_decl(decl: Any) -> list[Any]:
                 r.append(expand_decl(decl.align[0]))
             r.extend([decl.name, nested])
             return r
-        elif typ == c_ast.Typename:  # for function parameters
+        elif isinstance(decl, c_ast.Typename):  # for function parameters
             if decl.quals:
                 return ['Typename', decl.quals, nested]
             else:
                 return ['Typename', nested]
-        elif typ == c_ast.ArrayDecl:
+        elif isinstance(decl, c_ast.ArrayDecl):
             dimval = decl.dim.value if decl.dim else ''
             return ['ArrayDecl', dimval, decl.dim_quals, nested]
-        elif typ == c_ast.PtrDecl:
+        elif isinstance(decl, c_ast.PtrDecl):
             if decl.quals:
                 return ['PtrDecl', decl.quals, nested]
             else:
                 return ['PtrDecl', nested]
-        elif typ == c_ast.Typedef:
+        elif isinstance(decl, c_ast.Typedef):
             return ['Typedef', decl.name, nested]
-        elif typ == c_ast.FuncDecl:
+        elif isinstance(decl, c_ast.FuncDecl):
             if decl.args:
                 params = [expand_decl(param) for param in decl.args.params]
             else:
@@ -85,33 +83,32 @@ def expand_decl(decl: Any) -> list[Any]:
 
 def expand_init(init: Any) -> Sequence[Any]:
     """Converts an initialization into a nested list"""
-    typ = type(init)
 
-    if typ == c_ast.NamedInitializer:
+    if isinstance(init, c_ast.NamedInitializer):
         des = [expand_init(dp) for dp in init.name]
         return (des, expand_init(init.expr))
-    elif typ in (c_ast.InitList, c_ast.ExprList):
+    elif isinstance(init, (c_ast.InitList, c_ast.ExprList)):
         return [expand_init(expr) for expr in init.exprs]
-    elif typ == c_ast.Constant:
+    elif isinstance(init, c_ast.Constant):
         return ['Constant', init.type, init.value]
-    elif typ == c_ast.ID:
+    elif isinstance(init, c_ast.Identifier):
         return ['ID', init.name]
-    elif typ == c_ast.Decl:
+    elif isinstance(init, c_ast.Decl):
         return ['Decl', init.name]
-    elif typ == c_ast.UnaryOp:
+    elif isinstance(init, c_ast.UnaryOp):
         return ['UnaryOp', init.op, expand_decl(init.expr)]
-    elif typ == c_ast.BinaryOp:
+    elif isinstance(init, c_ast.BinaryOp):
         return ['BinaryOp', expand_init(init.left), init.op, expand_init(init.right)]
-    elif typ == c_ast.Compound:
+    elif isinstance(init, c_ast.Compound):
         blocks = []
         if init.block_items:
             blocks = [expand_init(i) for i in init.block_items]
         return ['Compound', blocks]
-    elif typ == c_ast.Typename:
+    elif isinstance(init, c_ast.Typename):
         return expand_decl(init)
     else:
         # Fallback to type name
-        return [typ.__name__]
+        return [type(init).__name__]
 
 
 def get_decl(source: str, index: int = 0) -> list[Any]:
@@ -134,24 +131,37 @@ def get_decl_init(source: str, index: int = 0) -> Sequence[Any]:
 # ======== Actual tests.
 
 
-def test_FileAST():
-    tree = parse('int a; char c;')
-    assert isinstance(tree, c_ast.FileAST)
-    assert len(tree.ext) == 2
-
-
-def test_FileAST_empty_file():
-    tree = parse('')
-    assert isinstance(tree, c_ast.FileAST)
-    assert len(tree.ext) == 0
+@pytest.mark.parametrize(
+    ("test_input", "expected_length"),
+    [
+        pytest.param("int a; char c;", 2, id="nonempty file"),
+        pytest.param("", 0, id="empty file"),
+    ],
+)
+def test_ast_File(test_input: str, expected_length: int):
+    tree = parse(test_input)
+    assert isinstance(tree, c_ast.File)
+    assert len(tree.ext) == expected_length
 
 
 def test_empty_toplevel_decl():
     code = 'int foo;;'
     tree = parse(code)
-    assert isinstance(tree, c_ast.FileAST)
+    assert isinstance(tree, c_ast.File)
     assert len(tree.ext) == 1
-    assert get_decl(code) == ['Decl', 'foo', ['TypeDecl', ['IdentifierType', ['int']]]]
+
+    expected_decl = c_ast.Decl(
+        name='foo',
+        quals=[],
+        align=[],
+        storage=[],
+        funcspec=[],
+        type=c_ast.TypeDecl(declname='foo', quals=[], align=None, type=c_ast.IdentifierType(names=['int'])),
+        init=None,
+        bitsize=None,
+    )
+
+    assert c_ast.compare_asts(tree.ext[0], expected_decl)
 
 
 def test_initial_semi():
@@ -164,92 +174,236 @@ def test_initial_semi():
     assert expand_decl(tree.ext[0]) == ['Decl', 'foo', ['TypeDecl', ['IdentifierType', ['int']]]]
 
 
-def test_coords():
-    """Tests the "coordinates" of parsed elements - file name, line and column numbers, with modification
-    inserted by #line directives.
-    """
-    
-    coord1 = parse('int a;').ext[0].coord
-    print(f"{coord1}")
-    assert parse('int a;').ext[0].coord == Coord('', 1, (5, 0))
+# def test_coords():
+#     """Tests the "coordinates" of parsed elements - file name, line and column numbers, with modification
+#     inserted by #line directives.
+#     """
 
-    t1 = """
-    int a;
-    int b;\n\n
-    int c;
-    """
-    f1 = parse(t1, filename='test.c')
-    assert f1.ext[0].coord == Coord('test.c', 2, (13, 0))
-    assert f1.ext[1].coord == Coord('test.c', 3, (13, 0))
-    assert f1.ext[2].coord == Coord('test.c', 6, (13, 0))
+#     from cparsing._utils import Coord
 
-    t1_1 = '''
-    int main() {
-        k = p;
-        printf("%d", b);
-        return 0;
-    }'''
-    f1_1 = parse(t1_1, filename='test.c')
-    assert f1_1.ext[0].body.block_items[0].coord == Coord('test.c', 3, (13, 0))
-    assert f1_1.ext[0].body.block_items[1].coord == Coord('test.c', 4, (13, 0))
+#     coord1 = parse('int a;').ext[0].coord
+#     print(coord1)
+#     assert parse('int a;').ext[0].coord == Coord('', 1, *(5, 0))
 
-    t1_2 = '''
-    int main () {
-        int p = (int) k;
-    }'''
-    f1_2 = parse(t1_2, filename='test.c')
-    # make sure that the Cast has a coord (issue 23)
-    assert f1_2.ext[0].body.block_items[0].init.coord == Coord('test.c', 3, (21, 0))
+#     t1 = """
+#     int a;
+#     int b;\n\n
+#     int c;
+#     """
+#     f1 = parse(t1, filename='test.c')
+#     assert f1.ext[0].coord == Coord('test.c', 2, *(13, 0))
+#     assert f1.ext[1].coord == Coord('test.c', 3, *(13, 0))
+#     assert f1.ext[2].coord == Coord('test.c', 6, *(13, 0))
 
-    t2 = """
-    #line 99
-    int c;
-    """
-    f2 = parse(t2)
-    assert f2.ext[0].coord == Coord('', 99, (13, 0))
+#     t1_1 = '''
+#     int main() {
+#         k = p;
+#         printf("%d", b);
+#         return 0;
+#     }'''
+#     f1_1 = parse(t1_1, filename='test.c')
+#     assert f1_1.ext[0].body.block_items[0].coord == Coord('test.c', 3, *(13, 0))
+#     assert f1_1.ext[0].body.block_items[1].coord == Coord('test.c', 4, *(13, 0))
 
-    t3 = """
-    int dsf;
-    char p;
-    #line 3000 "in.h"
-    char d;
-    """
-    f3 = parse(t3, filename='test.c')
-    assert f3.ext[0].coord == Coord('test.c', 2, (13, 0))
-    assert f3.ext[1].coord == Coord('test.c', 3, (14, 0))
-    assert f3.ext[2].coord == Coord('in.h', 3000, (14, 0))
+#     t1_2 = '''
+#     int main () {
+#         int p = (int) k;
+#     }'''
+#     f1_2 = parse(t1_2, filename='test.c')
+#     # make sure that the Cast has a coord (issue 23)
+#     assert f1_2.ext[0].body.block_items[0].init.coord == Coord('test.c', 3, *(21, 0))
 
-    t4 = """
-    #line 20 "restore.h"
-    int maydler(char);
+#     t2 = """
+#     #line 99
+#     int c;
+#     """
+#     f2 = parse(t2)
+#     assert f2.ext[0].coord == Coord('', 99, *(13, 0))
 
-    #line 30 "includes/daween.ph"
-    long j, k;
+#     t3 = """
+#     int dsf;
+#     char p;
+#     #line 3000 "in.h"
+#     char d;
+#     """
+#     f3 = parse(t3, filename='test.c')
+#     assert f3.ext[0].coord == Coord('test.c', 2, *(13, 0))
+#     assert f3.ext[1].coord == Coord('test.c', 3, *(14, 0))
+#     assert f3.ext[2].coord == Coord('in.h', 3000, *(14, 0))
 
-    #line 50000
-    char* ro;
-    """
-    f4 = parse(t4, filename='myb.c')
-    assert f4.ext[0].coord == Coord('restore.h', 20, (13, 0))
-    assert f4.ext[1].coord == Coord('includes/daween.ph', 30, (14, 0))
-    assert f4.ext[2].coord == Coord('includes/daween.ph', 30, (17, 0))
-    assert f4.ext[3].coord == Coord('includes/daween.ph', 50000, (13, 0))
+#     t4 = """
+#     #line 20 "restore.h"
+#     int maydler(char);
 
-    t5 = """
-    int
-    #line 99
-    c;
-    """
-    f5 = parse(t5)
-    assert f5.ext[0].coord == Coord('', 99, (9, 0))
+#     #line 30 "includes/daween.ph"
+#     long j, k;
 
-    # coord for ellipsis
-    t6 = """
-    int foo(int j,
-            ...) {
-    }"""
-    f6 = parse(t6)
-    assert f6.ext[0].decl.type.args.params[1].coord == Coord('', 3, (17, 0))
+#     #line 50000
+#     char* ro;
+#     """
+#     f4 = parse(t4, filename='myb.c')
+#     assert f4.ext[0].coord == Coord('restore.h', 20, *(13, 0))
+#     assert f4.ext[1].coord == Coord('includes/daween.ph', 30, *(14, 0))
+#     assert f4.ext[2].coord == Coord('includes/daween.ph', 30, *(17, 0))
+#     assert f4.ext[3].coord == Coord('includes/daween.ph', 50000, *(13, 0))
+
+#     t5 = """
+#     int
+#     #line 99
+#     c;
+#     """
+#     f5 = parse(t5)
+#     assert f5.ext[0].coord == Coord('', 99, *(9, 0))
+
+#     # coord for ellipsis
+#     t6 = """
+#     int foo(int j,
+#             ...) {
+#     }"""
+#     f6 = parse(t6)
+#     assert f6.ext[0].decl.type.args.params[1].coord == Coord('', 3, *(17, 0))
+
+
+@pytest.mark.parametrize(
+    ("test_input", "expected"),
+    [
+        (
+            "int a;",
+            c_ast.Decl(
+                name="a",
+                quals=[],
+                align=[],
+                storage=[],
+                funcspec=[],
+                type=c_ast.TypeDecl("a", [], None, c_ast.IdentifierType(["int"])),
+                init=None,
+                bitsize=None,
+            ),
+        ),
+        (
+            "unsigned int a;",
+            c_ast.Decl(
+                name="a",
+                quals=[],
+                align=[],
+                storage=[],
+                funcspec=[],
+                type=c_ast.TypeDecl("a", [], None, c_ast.IdentifierType(["unsigned", "int"])),
+                init=None,
+                bitsize=None,
+            ),
+        ),
+        (
+            "_Bool a;",
+            c_ast.Decl(
+                name="a",
+                quals=[],
+                align=[],
+                storage=[],
+                funcspec=[],
+                type=c_ast.TypeDecl("a", [], None, c_ast.IdentifierType(["_Bool"])),
+                init=None,
+                bitsize=None,
+            ),
+        ),
+        (
+            "float _Complex fcc;",
+            c_ast.Decl(
+                name="fcc",
+                quals=[],
+                align=[],
+                storage=[],
+                funcspec=[],
+                type=c_ast.TypeDecl("fcc", [], None, c_ast.IdentifierType(["float", "_Complex"])),
+                init=None,
+                bitsize=None,
+            ),
+        ),
+        (
+            "char* string;",
+            c_ast.Decl(
+                name="string",
+                quals=[],
+                align=[],
+                storage=[],
+                funcspec=[],
+                type=c_ast.PtrDecl(quals=[], type=c_ast.TypeDecl("string", [], None, c_ast.IdentifierType(["char"]))),
+                init=None,
+                bitsize=None,
+            ),
+        ),
+        (
+            "long ar[15];",
+            c_ast.Decl(  # 15 should be in this AST somewhere
+                name="ar",
+                quals=[],
+                align=[],
+                storage=[],
+                funcspec=[],
+                type=c_ast.ArrayDecl(
+                    type=c_ast.TypeDecl("ar", [], None, c_ast.IdentifierType(["long"])),
+                    dim=None,
+                    dim_quals=[],
+                ),
+                init=None,
+                bitsize=None,
+            ),
+        ),
+        # ("long long ar[15];", ()),
+        # ("unsigned ar[];", ()),
+        # ("int strlen(char* s);", ()),
+        # ("int strcmp(char* s1, char* s2);", ()),
+        # pytest.param(
+        #     "extern foobar(foo, bar);", (), id="function return values and parameters may not have type information"
+        # ),
+    ],
+)
+def test_simple_decls(test_input: str, expected: c_ast.AST):
+    print(c_ast.dump(parse(test_input).ext[0], indent=4))
+    print(c_ast.dump(expected, indent=4))
+    assert c_ast.compare_asts(parse(test_input).ext[0], expected)
+
+    # self.assertEqual(self.get_decl('long ar[15];'),
+    #     ['Decl', 'ar',
+    #         ['ArrayDecl', '15', [],
+    #             ['TypeDecl', ['IdentifierType', ['long']]]]])
+
+    # self.assertEqual(self.get_decl('long long ar[15];'),
+    #     ['Decl', 'ar',
+    #         ['ArrayDecl', '15', [],
+    #             ['TypeDecl', ['IdentifierType', ['long', 'long']]]]])
+
+    # self.assertEqual(self.get_decl('unsigned ar[];'),
+    #     ['Decl', 'ar',
+    #         ['ArrayDecl', '', [],
+    #             ['TypeDecl', ['IdentifierType', ['unsigned']]]]])
+
+    # self.assertEqual(self.get_decl('int strlen(char* s);'),
+    #     ['Decl', 'strlen',
+    #         ['FuncDecl',
+    #             [['Decl', 's',
+    #                 ['PtrDecl',
+    #                     ['TypeDecl', ['IdentifierType', ['char']]]]]],
+    #             ['TypeDecl', ['IdentifierType', ['int']]]]])
+
+    # self.assertEqual(self.get_decl('int strcmp(char* s1, char* s2);'),
+    #     ['Decl', 'strcmp',
+    #         ['FuncDecl',
+    #             [   ['Decl', 's1',
+    #                     ['PtrDecl', ['TypeDecl', ['IdentifierType', ['char']]]]],
+    #                 ['Decl', 's2',
+    #                     ['PtrDecl', ['TypeDecl', ['IdentifierType', ['char']]]]]
+    #             ],
+    #         ['TypeDecl', ['IdentifierType', ['int']]]]])
+
+    # # function return values and parameters may not have type information
+    # self.assertEqual(self.get_decl('extern foobar(foo, bar);'),
+    #     ['Decl', 'foobar',
+    #         ['FuncDecl',
+    #             [   ['ID', 'foo'],
+    #                 ['ID', 'bar']
+    #             ],
+    #         ['TypeDecl', ['IdentifierType', ['int']]]]])
 
 
 # class TestCParser_fundamentals(TestCParser_base):

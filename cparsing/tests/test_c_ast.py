@@ -1,23 +1,23 @@
-# ruff: noqa: ANN201
 import weakref
 
-from pycparser.cparsing import ast_c, cparser
+from cparsing import c_ast
+from cparsing.utils import Coord
 
 
 def test_BinaryOp():
-    b1 = ast_c.BinaryOp(op='+', left=ast_c.Constant(type='int', value='6'), right=ast_c.Identifier(name='joe'))
+    b1 = c_ast.BinaryOp(op='+', left=c_ast.Constant(type='int', value='6'), right=c_ast.Identifier(name='joe'))
 
-    assert isinstance(b1.left, ast_c.Constant)
+    assert isinstance(b1.left, c_ast.Constant)
 
     assert b1.left.type == 'int'
     assert b1.left.value == '6'
 
-    assert isinstance(b1.right, ast_c.Identifier)
+    assert isinstance(b1.right, c_ast.Identifier)
     assert b1.right.name == 'joe'
 
 
 def test_weakref_works_on_nodes():
-    c1 = ast_c.Constant(type='float', value='3.14')
+    c1 = c_ast.Constant(type='float', value='3.14')
     wr = weakref.ref(c1)
     cref = wr()
 
@@ -27,7 +27,7 @@ def test_weakref_works_on_nodes():
 
 
 def test_weakref_works_on_coord():
-    coord = cparser.Coord(filename='a', lineno=2, col_span=(0, 0))
+    coord = Coord('a', 2, *(0, 0))
     wr = weakref.ref(coord)
     cref = wr()
 
@@ -36,24 +36,24 @@ def test_weakref_works_on_coord():
     assert weakref.getweakrefcount(coord) == 1
 
 
-class ConstantVisitor(ast_c.NodeVisitor):
+class ConstantVisitor(c_ast.NodeVisitor):
     def __init__(self):
         self.values: list[str] = []
 
-    def visit_Constant(self, node: ast_c.Constant) -> None:
+    def visit_Constant(self, node: c_ast.Constant) -> None:
         self.values.append(node.value)
 
 
 def test_scalar_children():
-    b1 = ast_c.BinaryOp(op='+', left=ast_c.Constant(type='int', value='6'), right=ast_c.Identifier(name='joe'))
+    b1 = c_ast.BinaryOp(op='+', left=c_ast.Constant(type='int', value='6'), right=c_ast.Identifier(name='joe'))
 
     cv = ConstantVisitor()
     cv.visit(b1)
 
     assert cv.values == ['6']
 
-    b2 = ast_c.BinaryOp(op='*', left=ast_c.Constant(type='int', value='111'), right=b1)
-    b3 = ast_c.BinaryOp(op='^', left=b2, right=b1)
+    b2 = c_ast.BinaryOp(op='*', left=c_ast.Constant(type='int', value='111'), right=b1)
+    b3 = c_ast.BinaryOp(op='^', left=b2, right=b1)
 
     cv = ConstantVisitor()
     cv.visit(b3)
@@ -62,13 +62,13 @@ def test_scalar_children():
 
 
 def tests_list_children():
-    c1 = ast_c.Constant(type='float', value='5.6')
-    c2 = ast_c.Constant(type='char', value='t')
+    c1 = c_ast.Constant(type='float', value='5.6')
+    c2 = c_ast.Constant(type='char', value='t')
 
-    b1 = ast_c.BinaryOp(op='+', left=c1, right=c2)
-    b2 = ast_c.BinaryOp(op='-', left=b1, right=c2)
+    b1 = c_ast.BinaryOp(op='+', left=c1, right=c2)
+    b2 = c_ast.BinaryOp(op='-', left=b1, right=c2)
 
-    comp = ast_c.Compound(block_items=[b1, b2, c1, c2])
+    comp = c_ast.Compound(block_items=[b1, b2, c1, c2])
 
     cv = ConstantVisitor()
     cv.visit(comp)
@@ -77,13 +77,13 @@ def tests_list_children():
 
 
 def test_dump():
-    c1 = ast_c.Constant(type='float', value='5.6')
-    c2 = ast_c.Constant(type='char', value='t')
+    c1 = c_ast.Constant(type='float', value='5.6')
+    c2 = c_ast.Constant(type='char', value='t')
 
-    b1 = ast_c.BinaryOp(op='+', left=c1, right=c2)
-    b2 = ast_c.BinaryOp(op='-', left=b1, right=c2)
+    b1 = c_ast.BinaryOp(op='+', left=c1, right=c2)
+    b2 = c_ast.BinaryOp(op='-', left=b1, right=c2)
 
-    comp = ast_c.Compound(block_items=[b1, b2, c1, c2])
+    comp = c_ast.Compound(block_items=[b1, b2, c1, c2])
 
     expected = """\
 Compound(
@@ -117,4 +117,4 @@ Compound(
             value='t')])\
 """
 
-    assert ast_c.dump(comp, indent=" " * 4) == expected
+    assert c_ast.dump(comp, 4) == expected
