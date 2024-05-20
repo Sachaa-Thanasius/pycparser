@@ -1,12 +1,15 @@
-import io
+"""AST nodes and tools."""
+# ruff: noqa: A002
+
+import contextlib
 import sys
 from collections import deque
-from contextlib import ExitStack, contextmanager
+from io import StringIO
 from types import GeneratorType
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, Dict, Generator, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, Dict, Generator, List, Optional, Sequence
 from typing import Union as TUnion
 
-from cparsing.utils import Coord, Dataclass
+from cparsing.utils import Coord
 
 if sys.version_info >= (3, 10):
     from typing import TypeAlias, TypeGuard
@@ -37,7 +40,7 @@ else:
             return f"<placeholder for {super().__repr__()}"
 
 
-_SimpleNode: TypeAlias = "TUnion[Constant, Identifier, ArrayRef, StructRef, FuncCall]"
+_SimpleNode: TypeAlias = "TUnion[Constant, Id, ArrayRef, StructRef, FuncCall]"
 
 
 __all__ = (
@@ -66,7 +69,7 @@ __all__ = (
     "BinaryOp",
     "TernaryOp",
     "Pragma",
-    "Identifier",
+    "Id",
     "Constant",
     "EmptyStatement",
     "ArrayDecl",
@@ -80,7 +83,7 @@ __all__ = (
     "FuncCall",
     "FuncDecl",
     "FuncDef",
-    "IdentifierType",
+    "IdType",
     "InitList",
     "NamedInitializer",
     "PtrDecl",
@@ -98,37 +101,65 @@ __all__ = (
 )
 
 
-class AST(Dataclass, kw_only=True, weakref_slot=True):
-    coord: Optional[Coord] = None
+class AST:
+    __slots__ = ("__weakref__", "coord")
+
+    _fields = ()
+
+    def __init__(self, *, coord: Optional[Coord] = None):
+        self.coord = coord
 
 
 class File(AST):
-    ext: List[AST]
+    __slots__ = __match_args__ = _fields = ("ext",)
+
+    def __init__(self, ext: List[AST], *, coord: Optional[Coord] = None):
+        self.ext = ext
+        self.coord = coord
 
 
 class ExprList(AST):
-    exprs: List[AST]
+    __slots__ = __match_args__ = _fields = ("exprs",)
+
+    def __init__(self, exprs: List[AST], *, coord: Optional[Coord] = None):
+        self.exprs = exprs
+        self.coord = coord
 
 
 class Enumerator(AST):
-    name: str
-    value: AST
+    __slots__ = __match_args__ = _fields = ("name", "value")
+
+    def __init__(self, name: str, value: Optional[AST], *, coord: Optional[Coord] = None):
+        self.name = name
+        self.value = value
+        self.coord = coord
 
 
 class EnumeratorList(AST):
-    enumerators: List[Enumerator]
+    __slots__ = __match_args__ = _fields = ("enumerators",)
+
+    def __init__(self, enumerators: List[Enumerator], *, coord: Optional[Coord] = None):
+        self.enumerators = enumerators
 
 
 class ParamList(AST):
-    params: List[AST]
+    __slots__ = __match_args__ = _fields = ("params",)
+
+    def __init__(self, params: List[AST], *, coord: Optional[Coord] = None):
+        self.params = params
+        self.coord = coord
 
 
 class EllipsisParam(AST):
-    pass
+    __slots__ = _fields = ()
 
 
 class Compound(AST):
-    block_items: List[AST]
+    __slots__ = __match_args__ = _fields = ("block_items",)
+
+    def __init__(self, block_items: List[AST], *, coord: Optional[Coord] = None):
+        self.block_items = block_items
+        self.coord = coord
 
 
 # ======== Flow control
@@ -137,237 +168,449 @@ class Compound(AST):
 
 
 class For(AST):
-    init: AST
-    cond: AST
-    next: AST
-    stmt: AST
+    __slots__ = __match_args__ = _fields = ("init", "cond", "next", "stmt")
+
+    def __init__(
+        self,
+        init: Optional[AST],
+        cond: Optional[AST],
+        next: Optional[AST],
+        stmt: AST,
+        *,
+        coord: Optional[Coord] = None,
+    ):
+        self.init = init
+        self.cond = cond
+        self.next = next
+        self.stmt = stmt
+        self.coord = coord
 
 
 class While(AST):
-    cond: AST
-    stmt: AST
+    __slots__ = __match_args__ = _fields = ("cond", "stmt")
+
+    def __init__(self, cond: AST, stmt: AST, *, coord: Optional[Coord] = None):
+        self.cond = cond
+        self.stmt = stmt
+        self.coord = coord
 
 
 class DoWhile(AST):
-    cond: AST
-    stmt: AST
+    __slots__ = __match_args__ = _fields = ("cond", "stmt")
+
+    def __init__(self, cond: AST, stmt: AST, *, coord: Optional[Coord] = None):
+        self.cond = cond
+        self.stmt = stmt
+        self.coord = coord
 
 
-# ==== Other
+# ==== Other flow control
 
 
 class Goto(AST):
-    name: str
+    __slots__ = __match_args__ = _fields = ("name",)
+
+    def __init__(self, name: str, *, coord: Optional[Coord] = None):
+        self.name = name
+        self.coord = coord
 
 
 class Label(AST):
-    name: str
-    stmt: AST
+    __slots__ = __match_args__ = _fields = ("name", "stmt")
+
+    def __init__(self, name: str, stmt: AST, *, coord: Optional[Coord] = None):
+        self.name = name
+        self.stmt = stmt
+        self.coord = coord
 
 
 class Switch(AST):
-    cond: AST
-    stmt: AST
+    __slots__ = __match_args__ = _fields = ("cond", "stmt")
+
+    def __init__(self, cond: AST, stmt: AST, *, coord: Optional[Coord] = None):
+        self.cond = cond
+        self.stmt = stmt
+        self.coord = coord
 
 
 class Case(AST):
-    expr: AST
-    stmts: List[AST]
+    __slots__ = __match_args__ = _fields = ("expr", "stmts")
+
+    def __init__(self, expr: AST, stmts: List[AST], *, coord: Optional[Coord] = None):
+        self.expr = expr
+        self.stmts = stmts
+        self.coord = coord
 
 
 class Default(AST):
-    stmts: List[AST]
+    __slots__ = __match_args__ = _fields = ("stmts",)
+
+    def __init__(self, stmts: List[AST], *, coord: Optional[Coord] = None):
+        self.stmts = stmts
+        self.coord = coord
 
 
 class If(AST):
-    cond: AST
-    iftrue: AST
-    iffalse: Optional[AST]
+    __slots__ = __match_args__ = _fields = ("cond", "iftrue", "iffalse")
+
+    def __init__(self, cond: AST, iftrue: AST, iffalse: Optional[AST], *, coord: Optional[Coord] = None):
+        self.cond = cond
+        self.iftrue = iftrue
+        self.iffalse = iffalse
+        self.coord = coord
 
 
 class Continue(AST):
-    pass
+    __slots__ = _fields = ()
 
 
 class Break(AST):
-    pass
+    __slots__ = _fields = ()
 
 
 class Return(AST):
-    expr: AST
+    __slots__ = __match_args__ = _fields = ("expr",)
+
+    def __init__(self, expr: AST, *, coord: Optional[Coord] = None):
+        self.expr = expr
+        self.coord = coord
 
 
 # ======== Operations
 
 
 class Assignment(AST):
-    op: str
-    left: AST
-    right: AST
+    __slots__ = __match_args__ = _fields = ("op", "left", "right")
+
+    def __init__(self, op: str, left: AST, right: AST, *, coord: Optional[Coord] = None):
+        self.op = op
+        self.left = left
+        self.right = right
+        self.coord = coord
 
 
 class UnaryOp(AST):
-    op: str
-    expr: AST
+    __slots__ = __match_args__ = _fields = ("op", "expr")
+
+    def __init__(self, op: str, expr: AST, *, coord: Optional[Coord] = None):
+        self.op = op
+        self.expr = expr
 
 
 class BinaryOp(AST):
-    op: str
-    left: AST
-    right: AST
+    __slots__ = __match_args__ = _fields = ("op", "left", "right")
+
+    def __init__(self, op: str, left: AST, right: AST, *, coord: Optional[Coord] = None):
+        self.op = op
+        self.left = left
+        self.right = right
+        self.coord = coord
 
 
 class TernaryOp(AST):
-    cond: AST
-    iftrue: AST
-    iffalse: AST
+    __slots__ = __match_args__ = _fields = ("cond", "iftrue", "iffalse")
+
+    def __init__(self, cond: AST, iftrue: AST, iffalse: AST, *, coord: Optional[Coord] = None):
+        self.cond = cond
+        self.iftrue = iftrue
+        self.iffalse = iffalse
+        self.coord = coord
 
 
 # ======== Base
 
 
 class Pragma(AST):
-    string: str
+    __slots__ = __match_args__ = _fields = ("string",)
+
+    def __init__(self, string: str, *, coord: Optional[Coord] = None):
+        self.string = string
+        self.coord = coord
 
 
-class Identifier(AST):
-    name: str
+class Id(AST):
+    __slots__ = __match_args__ = _fields = ("name",)
+
+    def __init__(self, name: str, *, coord: Optional[Coord] = None):
+        self.name = name
+        self.coord = coord
 
 
 class Constant(AST):
-    type: str
-    value: str
+    __slots__ = __match_args__ = _fields = ("type", "value")
+
+    def __init__(self, type: str, value: str, *, coord: Optional[Coord] = None):
+        self.type = type
+        self.value = value
+        self.coord = coord
 
 
 class EmptyStatement(AST):
-    pass
+    __slots__ = _fields = ()
 
 
 # ======== Other
 
 
 class ArrayDecl(AST):
-    type: AST
-    dim: AST
-    dim_quals: List[str]
+    __slots__ = __match_args__ = _fields = ("type", "dim", "dim_quals")
+
+    def __init__(self, type: AST, dim: Optional[AST], dim_quals: List[str], *, coord: Optional[Coord] = None):
+        self.type = type
+        self.dim = dim
+        self.dim_quals = dim_quals
+        self.coord = coord
 
 
 class ArrayRef(AST):
-    name: AST
-    subscript: AST
+    __slots__ = __match_args__ = _fields = ("name", "subscript")
+
+    def __init__(self, name: AST, subscript: AST, *, coord: Optional[Coord] = None):
+        self.name = name
+        self.subscript = subscript
+        self.coord = coord
 
 
 class Alignas(AST):
-    alignment: AST
+    __slots__ = __match_args__ = _fields = ("alignment",)
+
+    def __init__(self, alignment: AST, *, coord: Optional[Coord] = None):
+        self.alignment = alignment
+        self.coord = coord
 
 
 class Cast(AST):
-    to_type: AST
-    expr: AST
+    __slots__ = __match_args__ = _fields = ("to_type", "expr")
+
+    def __init__(self, to_type: AST, expr: AST, *, coord: Optional[Coord] = None):
+        self.to_type = to_type
+        self.expr = expr
+        self.coord = coord
 
 
 class CompoundLiteral(AST):
-    type: AST
-    init: AST
+    __slots__ = __match_args__ = _fields = ("type", "init")
+
+    def __init__(self, type: AST, init: AST, *, coord: Optional[Coord] = None):
+        self.type = type
+        self.init = init
+        self.coord = coord
 
 
 class Decl(AST):
-    name: Optional[str]
-    quals: List[str]
-    align: List[Any]
-    storage: List[Any]
-    funcspec: List[Any]
-    type: AST
-    init: Optional[AST]
-    bitsize: Optional[AST]
+    __slots__ = __match_args__ = _fields = ("name", "quals", "align", "storage", "funcspec", "type", "init", "bitsize")
+
+    def __init__(
+        self,
+        name: Optional[str],
+        quals: List[str],
+        align: List[Any],
+        storage: List[str],
+        funcspec: List[Any],
+        type: AST,
+        init: Optional[AST],
+        bitsize: Optional[AST],
+        *,
+        coord: Optional[Coord] = None,
+    ):
+        self.name = name
+        self.quals = quals
+        self.align = align
+        self.storage = storage
+        self.funcspec = funcspec
+        self.type = type
+        self.init = init
+        self.bitsize = bitsize
+        self.coord = coord
 
 
 class DeclList(AST):
-    decls: List[Decl]
+    __slots__ = __match_args__ = _fields = ("decls",)
+
+    def __init__(self, decls: List[Decl], *, coord: Optional[Coord] = None):
+        self.decls = decls
+        self.coord = coord
 
 
 class Enum(AST):
-    name: Optional[str]
-    values: Optional[EnumeratorList]
+    __slots__ = __match_args__ = _fields = ("name", "values")
+
+    def __init__(self, name: Optional[str], values: Optional[EnumeratorList], *, coord: Optional[Coord] = None):
+        self.name = name
+        self.values = values
+        self.coord = coord
 
 
 class FuncCall(AST):
-    name: Identifier
-    args: ExprList
+    __slots__ = __match_args__ = _fields = ("name", "args")
+
+    def __init__(self, name: Id, args: ExprList, *, coord: Optional[Coord] = None):
+        self.name = name
+        self.args = args
+        self.coord = coord
 
 
 class FuncDecl(AST):
-    args: ParamList
-    type: AST
+    __slots__ = __match_args__ = _fields = ("args", "type")
+
+    def __init__(self, args: Optional[ParamList], type: AST, *, coord: Optional[Coord] = None):
+        self.args = args
+        self.type = type
+        self.coord = coord
 
 
 class FuncDef(AST):
-    decl: AST
-    param_decls: List[AST]
-    body: AST
+    __slots__ = __match_args__ = _fields = ("decl", "param_decls", "body")
+
+    def __init__(self, decl: AST, param_decls: Optional[List[AST]], body: AST, *, coord: Optional[Coord] = None):
+        self.decl = decl
+        self.param_decls = param_decls
+        self.body = body
+        self.coord = coord
 
 
-class IdentifierType(AST):
-    names: List[str]
+class IdType(AST):
+    __slots__ = __match_args__ = _fields = ("names",)
+
+    def __init__(self, names: List[str], *, coord: Optional[Coord] = None):
+        self.names = names
+        self.coord = coord
 
 
 class InitList(AST):
-    exprs: List[AST]
+    __slots__ = __match_args__ = _fields = ("exprs",)
+
+    def __init__(self, exprs: List[AST], *, coord: Optional[Coord] = None):
+        self.exprs = exprs
+        self.coord = coord
 
 
 class NamedInitializer(AST):
-    name: List[AST]
-    expr: AST
+    __slots__ = __match_args__ = _fields = ("name", "expr")
+
+    def __init__(self, name: List[AST], expr: AST, *, coord: Optional[Coord] = None):
+        self.name = name
+        self.expr = expr
+        self.coord = coord
 
 
 class PtrDecl(AST):
-    quals: Any
-    type: AST
+    __slots__ = __match_args__ = _fields = ("quals", "type")
+
+    def __init__(self, quals: Any, type: AST, *, coord: Optional[Coord] = None):
+        self.quals = quals
+        self.type = type
+        self.coord = coord
 
 
 class StaticAssert(AST):
-    cond: AST
-    message: AST
+    __slots__ = __match_args__ = _fields = ("cond", "message")
+
+    def __init__(self, cond: AST, message: Optional[AST], *, coord: Optional[Coord] = None):
+        self.cond = cond
+        self.message = message
+        self.coord = coord
 
 
 class Struct(AST):
-    name: str
-    decls: Optional[List[AST]]
+    __slots__ = __match_args__ = _fields = ("name", "decls")
+
+    def __init__(self, name: str, decls: Optional[List[AST]], *, coord: Optional[Coord] = None):
+        self.name = name
+        self.decls = decls
+        self.coord = coord
 
 
 class StructRef(AST):
-    name: AST
-    type: Any
-    field: AST
+    __slots__ = __match_args__ = _fields = ("name", "type", "field")
+
+    def __init__(self, name: AST, type: Any, field: AST, *, coord: Optional[Coord] = None):
+        self.name = name
+        self.type = type
+        self.field = field
+        self.coord = coord
 
 
 class TypeDecl(AST):
-    declname: Optional[str]
-    quals: Optional[Any]
-    align: Optional[Any]
-    type: Optional[AST]
+    __slots__ = __match_args__ = _fields = ("declname", "quals", "align", "type")
+
+    def __init__(
+        self,
+        declname: Optional[str],
+        quals: Optional[Any],
+        align: Optional[Any],
+        type: Optional[AST],
+        *,
+        coord: Optional[Coord] = None,
+    ):
+        self.declname = declname
+        self.quals = quals
+        self.align = align
+        self.type = type
+        self.coord = coord
 
 
 class Typedef(AST):
-    name: Optional[str]
-    quals: List[str]
-    storage: List[Any]
-    type: AST
+    __slots__ = __match_args__ = _fields = ("name", "quals", "storage", "type")
+
+    def __init__(
+        self,
+        name: Optional[str],
+        quals: List[str],
+        storage: List[Any],
+        type: AST,
+        *,
+        coord: Optional[Coord] = None,
+    ):
+        self.name = name
+        self.quals = quals
+        self.storage = storage
+        self.type = type
+        self.coord = coord
 
 
 class Typename(AST):
-    name: str
-    quals: List[str]
-    align: Optional[Any]
-    type: AST
+    __slots__ = __match_args__ = _fields = ("name", "quals", "align", "type")
+
+    def __init__(
+        self,
+        name: Optional[str],
+        quals: List[str],
+        align: Optional[Any],
+        type: AST,
+        *,
+        coord: Optional[Coord] = None,
+    ):
+        self.name = name
+        self.quals = quals
+        self.align = align
+        self.type = type
+        self.coord = coord
 
 
 class Union(AST):
-    name: str
-    decls: Optional[List[AST]]
+    __slots__ = __match_args__ = _fields = ("name", "decls")
+
+    def __init__(self, name: str, decls: Optional[List[AST]], *, coord: Optional[Coord] = None):
+        self.name = name
+        self.decls = decls
+        self.coord = coord
 
 
 # ======== AST utilities
+
+
+def iter_child_nodes(node: AST) -> Generator[AST, Any, None]:
+    for field in node._fields:
+        potential_subnode = getattr(node, field)
+
+        if isinstance(potential_subnode, AST):
+            yield potential_subnode
+
+        elif isinstance(potential_subnode, list):
+            for subsub in potential_subnode:  # pyright: ignore [reportUnknownVariableType]
+                if isinstance(subsub, AST):
+                    yield subsub
 
 
 class NodeVisitor:
@@ -399,21 +642,19 @@ class NodeVisitor:
 
         return result
 
-    def generic_visit(self, node: AST) -> Generator[Any, Any, None]:
+    def generic_visit(self, node: AST) -> Generator[AST, Any, None]:
         """Called if no explicit visitor function exists for a node."""
 
-        for field in node._fields:
-            potential_subnode = getattr(node, field)
-
-            if isinstance(potential_subnode, AST):
-                yield getattr(node, field)
-
-            elif isinstance(potential_subnode, list):
-                for subsub in potential_subnode:  # pyright: ignore [reportUnknownVariableType]
-                    if isinstance(subsub, AST):
-                        yield subsub
-
+        yield from iter_child_nodes(node)
         return None
+
+
+def walk(node: AST) -> Generator[AST, Any, None]:
+    stack: deque[AST] = deque([node])
+    while stack:
+        curr_node = stack.popleft()
+        stack.extend(iter_child_nodes(curr_node))
+        yield curr_node
 
 
 class _NodePrettyPrinter(NodeVisitor):
@@ -428,7 +669,7 @@ class _NodePrettyPrinter(NodeVisitor):
         self.annotate_fields = annotate_fields
         self.include_coords = include_coords
 
-        self.buffer = io.StringIO()
+        self.buffer = StringIO()
         self.indent_level = 0
 
     @property
@@ -461,7 +702,7 @@ class _NodePrettyPrinter(NodeVisitor):
         self.buffer.seek(self.buffer.tell() - len(self.sep))
         self.buffer.truncate()
 
-    @contextmanager
+    @contextlib.contextmanager
     def add_indent_level(self, val: int = 1) -> Generator[None, Any, None]:
         self.indent_level += val
         try:
@@ -469,7 +710,7 @@ class _NodePrettyPrinter(NodeVisitor):
         finally:
             self.indent_level -= val
 
-    @contextmanager
+    @contextlib.contextmanager
     def delimit(self, start: str, end: str) -> Generator[None, Any, None]:
         self.write(start)
         try:
@@ -489,6 +730,7 @@ class _NodePrettyPrinter(NodeVisitor):
                         yield subfield
                     else:
                         # This AST model assumes no nested lists, so this is the only alternative.
+                        # TODO: Consider using str() instead of repr() to avoid double-wrapping string subfields?
                         self.write(repr(subfield))
 
                     self.write(self.sep)
@@ -558,6 +800,9 @@ def dump(
 
 
 class _Unparser(NodeVisitor):
+    # TODO: Consider either writing to an IO buffer here or writing to a list in _NodePrettyPrinter for consistency
+    # in implementation.
+
     # fmt: off
     # Precedence map of binary operators:
     precedence_map: ClassVar[Dict[str, int]] = {
@@ -584,7 +829,7 @@ class _Unparser(NodeVisitor):
     def indent(self) -> str:
         return " " * self.indent_level
 
-    @contextmanager
+    @contextlib.contextmanager
     def add_indent_level(self, val: int = 1) -> Generator[None, Any, None]:
         self.indent_level += val
         try:
@@ -594,7 +839,7 @@ class _Unparser(NodeVisitor):
 
     @staticmethod
     def _is_simple_node(node: AST) -> TypeGuard[_SimpleNode]:
-        return isinstance(node, (Constant, Identifier, ArrayRef, StructRef, FuncCall))
+        return isinstance(node, (Constant, Id, ArrayRef, StructRef, FuncCall))
 
     def _visit_expression(self, node: AST) -> Generator[AST, str, str]:
         expr = yield node
@@ -631,10 +876,9 @@ class _Unparser(NodeVisitor):
 
         typ = type(node)
 
-        with ExitStack() as ctx:
+        with contextlib.ExitStack() as ctx:
             if add_indent:
                 ctx.enter_context(self.add_indent_level(2))
-
             indent = self.indent
 
         result = yield node
@@ -650,7 +894,7 @@ class _Unparser(NodeVisitor):
             ArrayRef,
             StructRef,
             Constant,
-            Identifier,
+            Id,
             Typedef,
             ExprList,
         }:
@@ -722,12 +966,14 @@ class _Unparser(NodeVisitor):
                     nstr.append("[")
                     if modifier.dim_quals:
                         nstr.append(" ".join(modifier.dim_quals) + " ")
-                    nstr.append(self.visit(modifier.dim) + "]")
+                    modifier_dim_str = yield modifier.dim
+                    nstr.append(f"{modifier_dim_str}]")
                 elif isinstance(modifier, FuncDecl):
                     if i != 0 and isinstance(modifiers[i - 1], PtrDecl):
                         nstr.insert(0, "(")
                         nstr.append(")")
-                    nstr.append("(" + self.visit(modifier.args) + ")")
+                    modifier_args_str = yield modifier.args
+                    nstr.append(f"({modifier_args_str})")
                 elif isinstance(modifier, PtrDecl):
                     if modifier.quals:
                         modifier_quals_str = " ".join(modifier.quals)
@@ -746,7 +992,7 @@ class _Unparser(NodeVisitor):
         elif isinstance(node, Typename):
             result = yield from self._generate_type(node.type, emit_declname=emit_declname)
             return result
-        elif isinstance(node, IdentifierType):
+        elif isinstance(node, IdType):
             return " ".join(node.names) + " "
         elif isinstance(node, (ArrayDecl, PtrDecl, FuncDecl)):
             result = yield from self._generate_type(node.type, [*modifiers, node], emit_declname=emit_declname)
@@ -758,7 +1004,7 @@ class _Unparser(NodeVisitor):
     def visit_Constant(self, node: Constant) -> str:
         return node.value
 
-    def visit_Identifier(self, node: Identifier) -> str:
+    def visit_Identifier(self, node: Id) -> str:
         return node.name
 
     def visit_Pragma(self, node: Pragma) -> str:
@@ -843,7 +1089,7 @@ class _Unparser(NodeVisitor):
         left = yield node.left
         return f"{left} {node.op} {right}"
 
-    def visit_IdentifierType(self, node: IdentifierType) -> str:
+    def visit_IdentifierType(self, node: IdType) -> str:
         return " ".join(node.names)
 
     def visit_Decl(self, node: Decl, *, no_type: bool = False) -> Generator[AST, str, str]:
@@ -1162,7 +1408,7 @@ class _Unparser(NodeVisitor):
         results: list[str] = []
 
         for name in node.name:
-            if isinstance(name, Identifier):
+            if isinstance(name, Id):
                 results.append(f".{name.name}")
             else:
                 name_str = yield name
@@ -1197,7 +1443,10 @@ def unparse(node: AST, *, reduce_parentheses: bool = False) -> str:
     return unparser.visit(node)
 
 
-def compare_asts(first_node: AST, second_node: AST) -> bool:
+# NodeOrNodeListT = TypeVar("NodeOrNodeListT", bound=TUnion[AST, Sequence[AST]])
+
+
+def compare_asts(first_node: TUnion[AST, Sequence[AST]], second_node: TUnion[AST, Sequence[AST]]) -> bool:
     """Compare two AST nodes for equality, to see if they have the same field structure with the same values.
 
     This only takes into account fields present in a node's _fields list while ignoring "coord".

@@ -1,6 +1,7 @@
-"""Some utilities for interal use.
+"""Some utilities for internal use.
 
-TODO: Add tests for dataclass functionality. Look at attrs and dataclass for inspiration.
+TODO: Add tests for dataclass functionality. See attrs and dataclass for inspiration.
+TODO: Consider implementing the linecache functionality. See beartype and attrs for implementation details.
 """
 
 import itertools
@@ -65,7 +66,7 @@ class _FieldInfo:
         self.kw_only = kw_only
 
 
-def _create_init(config: Dict[str, _FieldInfo]) -> str:
+def _create_init(fields: Dict[str, _FieldInfo]) -> str:
     """Generate the source for an __init__ function based on a given configuration."""
 
     def create_partial_sig(partial_config: Dict[str, _FieldInfo]) -> str:
@@ -88,8 +89,8 @@ def _create_init(config: Dict[str, _FieldInfo]) -> str:
 
         return "".join(partial_signature_parts)
 
-    regular_sig_part = create_partial_sig({name: field for name, field in config.items() if not field.kw_only})
-    kw_only_sig_part = create_partial_sig({name: field for name, field in config.items() if field.kw_only})
+    regular_sig_part = create_partial_sig({name: field for name, field in fields.items() if not field.kw_only})
+    kw_only_sig_part = create_partial_sig({name: field for name, field in fields.items() if field.kw_only})
 
     maybe_star = ", *" if kw_only_sig_part else ""
 
@@ -97,9 +98,19 @@ def _create_init(config: Dict[str, _FieldInfo]) -> str:
     if not (kw_only_sig_part or regular_sig_part):
         init_lines.append("    pass")
     else:
-        init_lines.extend(f"    self.{name} = {name}" for name in config)
+        init_lines.extend(f"    self.{name} = {name}" for name in fields)
 
     return "\n".join(init_lines)
+
+
+def _create_eq(fields: Dict[str, _FieldInfo]) -> str:
+    return (
+        "def __eq__(self, other: object, /) -> None:\n"
+        "    if not isinstance(other, type(self)):\n"
+        "        return NotImplemented\n"
+        "\n"
+        f"    return ({' and '.join(f'self.{name} == other.{name}' for name in fields)})"
+    )
 
 
 def _get_slots(cls: type) -> Generator[str, Any, None]:
@@ -130,7 +141,7 @@ def _get_slots(cls: type) -> Generator[str, Any, None]:
 @dataclass_transform(eq_default=False)
 class _DataclassMeta(type):
     _fields: Tuple[str, ...]
-    __pycparser_dataclass_fields__: Dict[str, _FieldInfo]
+    __pycparser_dataclass_fields__: Dict[str, _FieldInfo]  # Using a unique name to avoid clobbering.
 
     def __new__(
         mcls,
@@ -139,8 +150,9 @@ class _DataclassMeta(type):
         namespace: Dict[str, Any],
         *,
         init: bool = True,
-        kw_only: bool = False,
+        eq: bool = False,
         match_args: bool = True,
+        kw_only: bool = False,
         slots: bool = True,
         weakref_slot: bool = False,
     ):
@@ -151,6 +163,7 @@ class _DataclassMeta(type):
         except (KeyError, AttributeError):
             global_ns = {}
 
+        # Only __slots__ is injected into the namespace before class creation.
         if slots:
             cls_field_names = tuple(name for name, ann in cls_annotations.items() if ann is not ClassVar)
             unordered_bases = {mro_cls for base in bases for mro_cls in base.mro()}
@@ -163,6 +176,7 @@ class _DataclassMeta(type):
                 )
             )
 
+        # This collection of defaults probably misses a few edge cases, but I'm not sure which.
         field_defaults: dict[str, Any] = {}
         for ann_name in cls_annotations:
             try:
@@ -174,39 +188,45 @@ class _DataclassMeta(type):
 
         new_cls = super().__new__(mcls, name, bases, namespace)
 
-        dataclass_config: dict[str, _FieldInfo] = {}
+        # Now everything else is attached to the class.
+        dataclass_fields: dict[str, _FieldInfo] = {}
 
         for base in reversed(new_cls.mro()[:-1]):
             base_config = getattr(base, "__pycparser_dataclass_fields__", None)
             if base_config:
-                dataclass_config.update(base_config)
+                dataclass_fields.update(base_config)
 
         for ann_name, ann in cls_annotations.items():
             try:
-                current_field_info = dataclass_config[ann_name]
+                current_field_info = dataclass_fields[ann_name]
             except KeyError:
-                dataclass_config[ann_name] = _FieldInfo(ann_name, ann, field_defaults[ann_name], kw_only)
+                dataclass_fields[ann_name] = _FieldInfo(ann_name, ann, field_defaults[ann_name], kw_only)
             else:
                 current_field_info.default = field_defaults[ann_name]
                 current_field_info.kw_only = kw_only
 
         new_cls._fields = tuple(
             field_name
-            for field_name, field in dataclass_config.items()
+            for field_name, field in dataclass_fields.items()
             if (field.type is not ClassVar) and (not field.kw_only)
         )
 
         if match_args:
             new_cls.__match_args__ = new_cls._fields  # pyright: ignore [reportAttributeAccessIssue] # Runtime attribute assignment.
 
-        new_cls.__pycparser_dataclass_fields__ = dataclass_config
+        new_cls.__pycparser_dataclass_fields__ = dataclass_fields
 
         # TODO: Research if using the old namespace *after* class creation is a problem.
         # If it is, just use an empty local dict.
         if init:
-            init_code = _create_init(dataclass_config)
+            init_code = _create_init(dataclass_fields)
             exec(init_code, global_ns, namespace)  # noqa: S102
             new_cls.__init__ = namespace["__init__"]
+
+        if eq:
+            eq_code = _create_eq(dataclass_fields)
+            exec(eq_code, global_ns, namespace)  # noqa: S102
+            new_cls.__eq__ = namespace["__eq__"]
 
         return new_cls
 
@@ -214,8 +234,8 @@ class _DataclassMeta(type):
 class Dataclass(metaclass=_DataclassMeta):
     """Custom metaclass-based dataclass implementation with fewer features.
 
-    It currently handles kw_only, match_args, and weakref_slot in a similar way to standard dataclasses. It also
-    generates a _fields class attribute.
+    It currently handles init, eq, kw_only, match_args, slots, and weakref_slot in a similar way to standard
+    dataclasses, but less comprehensively. It also generates a _fields class attribute.
 
     Notes
     -----
@@ -227,33 +247,59 @@ class Dataclass(metaclass=_DataclassMeta):
     For these reasons and the fact that it's an implementation detail for the AST classes, it isn't part of the public
     API. Still, it was fun to make and helps avoid boilerplate for a simple use case.
 
+    The observed benefits over a regular dataclass:
+        - Slots are supported on 3.8.
+        - Creating a class takes half as long (at most).
+
     Some current pecularities:
-        - __slots__ is always generated, and if slots are already defined, it overrides them without raising an exception.
+        - __slots__ is generated by default, and if slots are already defined, it overrides them without raising an
+        exception.
         - Custom descriptors aren't handled.
         - Interacting with default values sometimes has non-intuitive behavior.
         - Types from typing_extensions aren't accounted for, e.g. ClassVar.
-        - __init__ parameter annotations will be missing nested annotation elements, i.e. `val: List[AST]` becomes `val: List`.
+        - __init__ parameter annotations will be missing nested annotation elements, i.e. `val: List[AST]` becomes
+        `val: List`.
     """
 
 
-class Coord(Dataclass, weakref_slot=True):
-    filename: str
-    lineno: int
-    col_start: int
-    col_end: Optional[int] = None
+class Coord:
+    __slots__ = ("__weakref__", "filename", "line_start", "line_end", "col_start", "col_end")
+
+    def __init__(
+        self,
+        filename: str,
+        line_start: int,
+        col_start: int,
+        line_end: Optional[int] = None,
+        col_end: Optional[int] = None,
+    ):
+        self.filename = filename
+        self.line_start = line_start
+        self.line_end = line_end
+        self.col_start = col_start
+        self.col_end = col_end
 
     @classmethod
     def from_literal(cls, p: Any, literal: str, filename: str = "") -> Self:
-        return cls(filename, p.lineno, p.index, p.index + len(literal))
+        return cls(filename, p.lineno, p.index, None, p.index + len(literal))
 
     @classmethod
     def from_prod(cls, parser: Parser, p: Any, tokenpos: Optional[int] = None, filename: str = "") -> Self:
         lineno = parser.line_position(p)
         col_start, col_end = parser.index_position(p)
-        return cls(filename, lineno, col_start, col_end)
+        return cls(filename, lineno, col_start, None, col_end)
+
+    @classmethod
+    def combine_coords(cls, coord1: Self, coord2: Self) -> Self:
+        line_start = coord1.line_start
+        line_end = coord2.line_end or coord2.line_start
+        col_start = coord1.col_start
+        col_end = coord2.col_start or coord2.col_end
+
+        return cls("", line_start, line_end, col_start, col_end)
 
     def __str__(self):
-        return f"{self.filename}:{self.lineno}:{(self.col_start, self.col_end)}"
+        return f"{self.filename}:{self.line_start}:{(self.col_start, self.col_end)}"
 
     def __eq__(self, other: object, /):
         if not isinstance(other, type(self)):
@@ -261,7 +307,8 @@ class Coord(Dataclass, weakref_slot=True):
 
         return (
             self.filename == other.filename
-            and self.lineno == other.lineno
+            and self.line_start == other.line_start
+            and self.line_end == other.line_end
             and self.col_start == other.col_start
             and self.col_end == other.col_end
         )
