@@ -72,10 +72,10 @@ unfixable = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"__init__.py" = ["F403", "PLC0414"] # Star import usually throws these.
 "cparsing/tests/*" = [
     "T201",   # Allow printing.
     "ANN201", # Allow lack of return annotations. Tests return None usually.
+    "ANN202",
 ]
 
 [tool.ruff.lint.pyupgrade]

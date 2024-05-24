@@ -3,10 +3,11 @@ from __future__ import annotations
 from collections import ChainMap
 from typing import Any
 
+from pycparser.c_parser import CParser as OGParser
+
 from cparsing import c_ast
 from cparsing.c_lexer import CLexer
 from cparsing.c_parser import CParseError, CParser
-from pycparser.c_parser import CParser as OGParser
 
 source = """\
 typedef char TT;

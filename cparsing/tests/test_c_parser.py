@@ -1,23 +1,15 @@
-from collections import ChainMap
 from pathlib import Path
 from typing import Any, List, Optional, Tuple, Type, Union
 
 import pytest
 
-from cparsing import c_ast
-from cparsing.c_lexer import CLexer
-from cparsing.c_parser import CParseError, CParser
+from cparsing import c_ast, parse
+from cparsing.c_parser import CParseError
 from cparsing.utils import Coord
 
-# ======== Helper functions.
+# ======== Helper utilities.
 
-
-def parse(source: str, filename: str = "") -> c_ast.File:
-    scope_stack: ChainMap[str, bool] = ChainMap()
-    test_clexer = CLexer(scope_stack)
-    test_cparser = CParser(scope_stack)
-    return test_cparser.parse(test_clexer.tokenize(source))
-
+SAMPLE_CFILES_PATH = Path().resolve(strict=True) / "tests" / "c_files"
 
 _MISSING: Any = object()
 
@@ -26,7 +18,7 @@ def DeclWithDefaults(
     name: str,
     type: c_ast.AST,  # noqa: A002
     quals: List[str] = _MISSING,
-    align: List[Any] = _MISSING,
+    align: List[c_ast.Alignas] = _MISSING,
     storage: List[str] = _MISSING,
     funcspec: List[Any] = _MISSING,
     init: Optional[c_ast.AST] = None,
@@ -47,6 +39,8 @@ def DeclWithDefaults(
         funcspec = []
     return c_ast.Decl(name, quals, align, storage, funcspec, type, init, bitsize)
 
+
+# =====================================================================================================================
 
 # ======== Actual tests.
 
@@ -73,7 +67,7 @@ def test_empty_toplevel_decl():
     assert len(tree.ext) == 1
 
     expected_decl = DeclWithDefaults("foo", c_ast.TypeDecl("foo", [], None, c_ast.IdType(["int"])))
-    assert c_ast.compare_asts(tree.ext[0], expected_decl)
+    assert tree.ext[0] == expected_decl
 
 
 @pytest.mark.parametrize(
@@ -88,7 +82,7 @@ def test_empty_toplevel_decl():
 )
 def test_initial_semi(test_input: str, expected: c_ast.AST):
     tree = parse(test_input)
-    assert c_ast.compare_asts(tree, expected)
+    assert tree == expected
 
 
 @pytest.mark.xfail
@@ -333,7 +327,7 @@ void foo() {
 def test_simple_decls(test_input: str, expected: c_ast.AST):
     tree = parse(test_input)
     decl = tree.ext[0]
-    assert c_ast.compare_asts(decl, expected)
+    assert decl == expected
 
 
 @pytest.mark.parametrize(
@@ -729,7 +723,7 @@ def test_simple_decls(test_input: str, expected: c_ast.AST):
 def test_nested_decls(test_input: str, expected: c_ast.AST):
     tree = parse(test_input)
     decl = tree.ext[0]
-    assert c_ast.compare_asts(decl, expected)
+    assert decl == expected
 
 
 @pytest.mark.parametrize(
@@ -916,7 +910,7 @@ def test_nested_decls(test_input: str, expected: c_ast.AST):
 def test_func_decls_with_array_dim_qualifiers(test_input: str, expected: c_ast.AST):
     tree = parse(test_input)
     decl = tree.ext[0]
-    assert c_ast.compare_asts(decl, expected)
+    assert decl == expected
 
 
 @pytest.mark.parametrize(
@@ -1047,11 +1041,7 @@ def test_qualifiers_storage_specifiers_2():
         ),
     ],
 )
-def test_atomic_specifier(
-    test_input: str,
-    index: Union[int, slice],
-    expected: Union[c_ast.AST, List[c_ast.AST]],
-):
+def test_atomic_specifier(test_input: str, index: Union[int, slice], expected: Union[c_ast.AST, List[c_ast.AST]]):
     tree = parse(test_input)
     decl = tree.ext[index]
     assert c_ast.compare_asts(decl, expected)
@@ -1105,7 +1095,7 @@ void foo()
     for index, expected in block_item_init_cases:
         found_init = compound.block_items[index].init
         assert isinstance(found_init, c_ast.UnaryOp)
-        assert c_ast.compare_asts(found_init, expected)
+        assert found_init == expected
 
 
 @pytest.mark.parametrize(
@@ -1177,7 +1167,7 @@ void foo()
 def test_alignof(test_input: str, expected: c_ast.AST) -> None:
     tree = parse(test_input)
     decl = tree.ext[0]
-    assert c_ast.compare_asts(decl, expected)
+    assert decl == expected
 
 
 def test_offsetof():
@@ -1353,7 +1343,7 @@ void foo() {
 
     compound = tree.ext[0].body.block_items[index].right
     assert isinstance(compound, c_ast.CompoundLiteral)
-    assert c_ast.compare_asts(compound, expected)
+    assert compound == expected
 
 
 def test_parenthesized_compounds() -> None:
@@ -1451,7 +1441,7 @@ def test_enums(test_input: str, expected: c_ast.AST) -> None:
     tree = parse(test_input)
     enum_type = tree.ext[0].type.type  # type: ignore
     assert isinstance(enum_type, c_ast.Enum)
-    assert c_ast.compare_asts(enum_type, expected)
+    assert enum_type == expected
 
 
 @pytest.mark.parametrize(
@@ -1500,7 +1490,7 @@ def test_enums(test_input: str, expected: c_ast.AST) -> None:
             ),
         ),
         (
-            "",
+            "typedef int (* const * const T)(void);",
             0,
             c_ast.Typedef(
                 name="T",
@@ -1529,7 +1519,7 @@ def test_enums(test_input: str, expected: c_ast.AST) -> None:
         ),
     ],
 )
-def test_typedef(test_input: str, index: int, expected: c_ast.AST) -> None:
+def test_typedef(test_input: str, index: Union[int, slice], expected: Union[c_ast.AST, List[c_ast.AST]]) -> None:
     tree = parse(test_input)
     assert c_ast.compare_asts(tree.ext[index], expected)
 
@@ -1620,7 +1610,7 @@ def test_typedef_error(test_input: str):
                     align=None,
                     type=c_ast.Union(
                         name=None,
-                        decls=[  # type: ignore
+                        decls=[
                             DeclWithDefaults(
                                 name="n",
                                 type=c_ast.TypeDecl(
@@ -1779,7 +1769,7 @@ def test_typedef_error(test_input: str):
         ),
     ],
 )
-def test_struct_union(test_input: str, index: int, expected: c_ast.AST) -> None:
+def test_struct_union(test_input: str, index: Union[int, slice], expected: Union[c_ast.AST, List[c_ast.AST]]) -> None:
     tree = parse(test_input)
     type_ = tree.ext[index]
     assert c_ast.compare_asts(type_, expected)
@@ -1875,7 +1865,7 @@ struct _on_exit_args {
 def test_struct_enum(test_input: str, expected: c_ast.AST):
     tree = parse(test_input)
     type_ = tree.ext[0]
-    assert c_ast.compare_asts(type_, expected)
+    assert type_ == expected
 
 
 @pytest.mark.parametrize(
@@ -1902,7 +1892,7 @@ def test_struct_enum(test_input: str, expected: c_ast.AST):
             ),
         ),
         (
-            "struct {\n" "    int a;;;;\n" "    float b, c;\n" "    ;;\n" "    char d;\n" "} foo;",
+            "struct {\n    int a;;;;\n    float b, c;\n    ;;\n    char d;\n} foo;",
             DeclWithDefaults(
                 name="foo",
                 type=c_ast.TypeDecl(
@@ -1938,7 +1928,7 @@ def test_struct_enum(test_input: str, expected: c_ast.AST):
 def test_struct_with_extra_semis_inside(test_input: str, expected: c_ast.AST):
     tree = parse(test_input)
     type_ = tree.ext[0]
-    assert c_ast.compare_asts(type_, expected)
+    assert type_ == expected
 
 
 @pytest.mark.parametrize(
@@ -1964,7 +1954,7 @@ def test_struct_with_extra_semis_inside(test_input: str, expected: c_ast.AST):
 def test_struct_with_initial_semi(test_input: str, expected: c_ast.AST):
     tree = parse(test_input)
     type_ = tree.ext[0]
-    assert c_ast.compare_asts(type_, expected)
+    assert type_ == expected
 
 
 @pytest.mark.parametrize(
@@ -2127,7 +2117,7 @@ def test_struct_with_initial_semi(test_input: str, expected: c_ast.AST):
 def test_anonymous_struct_union(test_input: str, expected: c_ast.AST):
     tree = parse(test_input)
     type_ = tree.ext[0]
-    assert c_ast.compare_asts(type_, expected)
+    assert type_ == expected
 
 
 def test_struct_members_namespace():
@@ -2175,7 +2165,7 @@ void main(void)
         ),
     )
 
-    assert c_ast.compare_asts(tree.ext[2], expected2)
+    assert tree.ext[2] == expected2
     assert tree.ext[3].body.block_items[0].left.field.name == "Name"
 
 
@@ -2215,7 +2205,7 @@ struct {
         ),
     )
 
-    assert c_ast.compare_asts(parsed_struct, expected)
+    assert parsed_struct == expected
 
 
 @pytest.mark.parametrize(
@@ -2247,7 +2237,7 @@ def test_struct_empty(test_input: str, expected: c_ast.AST):
     # an empty struct. This is NOT C99 compliant
     tree = parse(test_input)
     empty_struct = tree.ext[0]
-    assert c_ast.compare_asts(empty_struct, expected)
+    assert empty_struct == expected
 
 
 @pytest.mark.parametrize(
@@ -2334,7 +2324,7 @@ def test_struct_empty(test_input: str, expected: c_ast.AST):
         ),
     ],
 )
-def test_tags_namespace(test_input: str, index: int, expected: c_ast.AST):
+def test_tags_namespace(test_input: str, index: Union[int, slice], expected: Union[c_ast.AST, List[c_ast.AST]]):
     """Tests that the tags of structs/unions/enums reside in a separate namespace and
     can be named after existing types.
     """
@@ -2379,7 +2369,7 @@ def test_tags_namespace(test_input: str, index: int, expected: c_ast.AST):
 )
 def test_multi_decls(test_input: str, expected: c_ast.AST):
     tree = parse(test_input)
-    assert c_ast.compare_asts(tree, expected)
+    assert tree == expected
 
 
 @pytest.mark.parametrize("test_input", ["int enum {ab, cd} fubr;", "enum kid char brbr;"])
@@ -2649,7 +2639,7 @@ def test_decl_inits(test_input: str, expected: c_ast.AST):
     if isinstance(expected, list):
         assert c_ast.compare_asts(tree.ext, expected)
     else:
-        assert c_ast.compare_asts(tree.ext[0], expected)
+        assert tree.ext[0] == expected
 
 
 @pytest.mark.parametrize(
@@ -2692,7 +2682,7 @@ def test_decl_named_inits(test_input: str, expected: c_ast.AST):
     init = tree.ext[0].init
 
     assert isinstance(init, c_ast.InitList)
-    assert c_ast.compare_asts(init, expected)
+    assert init == expected
 
 
 @pytest.mark.parametrize(
@@ -2814,7 +2804,7 @@ def test_decl_named_inits(test_input: str, expected: c_ast.AST):
 )
 def test_function_definitions(test_input: str, expected: c_ast.AST):
     tree = parse(test_input)
-    assert c_ast.compare_asts(tree.ext[0], expected)
+    assert tree.ext[0] == expected
 
 
 def test_static_assert():
@@ -2830,13 +2820,13 @@ int factorial(int p)
     tree = parse(test_input)
 
     expected_assert_1 = c_ast.StaticAssert(cond=c_ast.Constant("int", "1"), message=c_ast.Constant("string", '"123"'))
-    assert c_ast.compare_asts(tree.ext[0], expected_assert_1)
+    assert tree.ext[0] == expected_assert_1
 
     expected_assert_2 = c_ast.StaticAssert(cond=c_ast.Constant("int", "2"), message=c_ast.Constant("string", '"456"'))
-    assert c_ast.compare_asts(tree.ext[1].body.block_items[0], expected_assert_2)
+    assert tree.ext[1].body.block_items[0] == expected_assert_2
 
     expected_assert_3 = c_ast.StaticAssert(cond=c_ast.Constant("int", "3"), message=None)
-    assert c_ast.compare_asts(tree.ext[1].body.block_items[2], expected_assert_3)
+    assert tree.ext[1].body.block_items[2] == expected_assert_3
 
 
 @pytest.mark.parametrize(
@@ -2864,7 +2854,7 @@ int factorial(int p)
 def test_unified_string_literals(test_input: str, expected: c_ast.AST):
     tree = parse(test_input)
 
-    assert c_ast.compare_asts(tree.ext[0].init, expected)
+    assert tree.ext[0].init == expected
 
 
 @pytest.mark.xfail(reason="Not unsupported yet. See issue 392.")
@@ -2883,7 +2873,7 @@ def test_escapes_in_unified_string_literals():
         tree = parse(test_input)
 
         expected = c_ast.Constant("string", r'"\123"')
-        assert c_ast.compare_asts(tree.ext[0].init, expected)
+        assert tree.ext[0].init == expected
 
 
 def test_unified_string_literals_issue_6():
@@ -2919,7 +2909,7 @@ int main() {
 def test_unified_wstring_literals(test_input: str, expected: c_ast.AST):
     tree = parse(test_input)
 
-    assert c_ast.compare_asts(tree.ext[0].init, expected)
+    assert tree.ext[0].init == expected
 
 
 def test_inline_specifier():
@@ -2949,10 +2939,10 @@ int main() {
     tree = parse(test_input)
 
     expected_dim_1 = c_ast.Assignment(op="=", left=c_ast.Id("size"), right=c_ast.Constant("int", "5"))
-    assert c_ast.compare_asts(tree.ext[0].body.block_items[1].type.dim, expected_dim_1)
+    assert tree.ext[0].body.block_items[1].type.dim == expected_dim_1
 
     expected_dim_2 = c_ast.Id("*")
-    assert c_ast.compare_asts(tree.ext[0].body.block_items[2].type.dim, expected_dim_2)
+    assert tree.ext[0].body.block_items[2].type.dim == expected_dim_2
 
 
 def test_pragma():
@@ -2976,27 +2966,27 @@ _Pragma("other \"string\"")
     tree = parse(test_input)
 
     pragma1 = tree.ext[0]
-    assert c_ast.compare_asts(pragma1, c_ast.Pragma("bar"))
+    assert pragma1 == c_ast.Pragma("bar")
     assert pragma1.coord.line_start == 2
 
     pragma2 = tree.ext[1].body.block_items[0]
-    assert c_ast.compare_asts(pragma2, c_ast.Pragma("foo"))
+    assert pragma2 == c_ast.Pragma("foo")
     assert pragma2.coord.line_start == 4
 
     pragma3 = tree.ext[1].body.block_items[2]
-    assert c_ast.compare_asts(pragma3, c_ast.Pragma("baz"))
+    assert pragma3 == c_ast.Pragma("baz")
     assert pragma3.coord.line_start == 6
 
     pragma4 = tree.ext[1].body.block_items[4]
-    assert c_ast.compare_asts(pragma4, c_ast.Pragma(""))
+    assert pragma4 == c_ast.Pragma("")
     assert pragma4.coord.line_start == 10
 
     pragma5 = tree.ext[2].body.block_items[0]
-    assert c_ast.compare_asts(pragma5, c_ast.Pragma("baz"))
+    assert pragma5 == c_ast.Pragma("baz")
     assert pragma5.coord.line_start == 13
 
     pragma6 = tree.ext[3]
-    assert c_ast.compare_asts(pragma6, c_ast.Pragma(r'"other \"string\""'))
+    assert pragma6 == c_ast.Pragma(r'"other \"string\""')
     assert pragma6.coord.line_start == 15
 
 
@@ -3095,6 +3085,8 @@ void main() {
 
     assert c_ast.compare_asts(tree.ext[0].body.block_items, expected_list)
 
+
+# =====================================================================================================================
 
 # ==== Testing of parsing whole chunks of code.
 
@@ -3323,7 +3315,7 @@ int foo(void) {
     assert len(block[1].stmts) == 0
 
     assert is_case_node(block[2], "30")
-    self.assertEqual(len(block[2].stmts), 1)
+    assert len(block[2].stmts) == 1
 
     assert isinstance(block[3], c_ast.Default)
 
@@ -3426,13 +3418,10 @@ def test_for_statement(test_input: str, expected_i_ref_count: int, expected_For_
     assert match_number_of_node_instances(tree, c_ast.For, expected_For_instance_count)
 
 
-cfiles_path = Path().resolve(strict=True).parent / "c_files"
-
-
 def test_whole_file():
     # See how pycparser handles a whole, real C file.
 
-    with cfiles_path.joinpath("memmgr_with_h.c").open(encoding="utf-8") as fp:
+    with SAMPLE_CFILES_PATH.joinpath("memmgr_with_h.c").open(encoding="utf-8") as fp:
         code = fp.read()
 
     test_input = parse(code)
@@ -3457,7 +3446,7 @@ def test_whole_file():
 def test_whole_file_with_stdio():
     # Parse a whole file with stdio.h included by cpp
 
-    with cfiles_path.joinpath("cppd_with_stdio_h.c").open(encoding="utf-8") as fp:
+    with SAMPLE_CFILES_PATH.joinpath("cppd_with_stdio_h.c").open(encoding="utf-8") as fp:
         code = fp.read()
 
     test_input = parse(code)
@@ -3476,6 +3465,8 @@ def test_whole_file_with_stdio():
     assert isinstance(test_input.ext[-8].type, c_ast.TypeDecl)
     assert test_input.ext[-8].name == "cookie_io_functions_t"
 
+
+# =====================================================================================================================
 
 # ==== Test issues related to the typedef-name problem.
 
@@ -3625,8 +3616,8 @@ def test_ambiguous_parameters(test_input: str, expected_inner_param_1: c_ast.AST
     #  typedef name."
 
     tree = parse(test_input)
-    assert c_ast.compare_asts(tree.ext[1].type.args.params[0], expected_inner_param_1)
-    assert c_ast.compare_asts(tree.ext[2].type.args.params[0], expected_inner_param_2)
+    assert tree.ext[1].type.args.params[0] == expected_inner_param_1
+    assert tree.ext[2].type.args.params[0] == expected_inner_param_2
 
 
 def test_innerscope_reuse_typedef_name():
@@ -3647,8 +3638,8 @@ TT x = 5;
     expected_after_end = DeclWithDefaults(
         name="x", type=c_ast.TypeDecl("x", [], None, c_ast.IdType(["TT"])), init=c_ast.Constant("int", "5")
     )
-    assert c_ast.compare_asts(tree1.ext[1].body.block_items[0], expected_before_end)
-    assert c_ast.compare_asts(tree1.ext[2], expected_after_end)
+    assert tree1.ext[1].body.block_items[0] == expected_before_end
+    assert tree1.ext[2] == expected_after_end
 
     # this should be recognized even with an initializer
     test_input_2 = r"""
@@ -3662,7 +3653,7 @@ void foo(void) {
     expected = DeclWithDefaults(
         name="TT", type=c_ast.TypeDecl("TT", [], None, c_ast.IdType(["unsigned"])), init=c_ast.Constant("int", "10")
     )
-    assert c_ast.compare_asts(tree2.ext[1].body.block_items[0], expected)
+    assert tree2.ext[1].body.block_items[0] == expected
 
     # before the second local variable, TT is a type; after, it's a
     # variable
@@ -3690,8 +3681,8 @@ void foo(void) {
         type=c_ast.TypeDecl("TT", [], None, c_ast.IdType(names=["unsigned"])),
         init=c_ast.Constant("int", "10"),
     )
-    assert c_ast.compare_asts(tree3.ext[1].body.block_items[0], expected_before_end)
-    assert c_ast.compare_asts(tree3.ext[1].body.block_items[1], expected_after_end)
+    assert tree3.ext[1].body.block_items[0] == expected_before_end
+    assert tree3.ext[1].body.block_items[1] == expected_after_end
 
     # a variable and its type can even share the same name
     test_input_4 = r"""
@@ -3720,8 +3711,8 @@ void foo(void) {
         init=c_ast.BinaryOp(op="*", left=c_ast.Id("TT"), right=c_ast.Constant("int", "2")),
     )
 
-    assert c_ast.compare_asts(tree4.ext[1].body.block_items[0], expected_before_end)
-    assert c_ast.compare_asts(tree4.ext[1].body.block_items[1], expected_after_end)
+    assert tree4.ext[1].body.block_items[0] == expected_before_end
+    assert tree4.ext[1].body.block_items[1] == expected_after_end
 
     # ensure an error is raised if a type, redeclared as a variable, is
     # used as a type
@@ -3747,8 +3738,8 @@ void foo(void) {
     expected_before_end = DeclWithDefaults(name="TT", type=c_ast.TypeDecl("TT", [], None, c_ast.IdType(["unsigned"])))
     expected_after_end = DeclWithDefaults(name="uu", type=c_ast.TypeDecl("uu", [], None, c_ast.IdType(["unsigned"])))
 
-    assert c_ast.compare_asts(tree6.ext[1].body.block_items[0], expected_before_end)
-    assert c_ast.compare_asts(tree6.ext[1].body.block_items[1], expected_after_end)
+    assert tree6.ext[1].body.block_items[0] == expected_before_end
+    assert tree6.ext[1].body.block_items[1] == expected_after_end
 
     # reusing a type name should work after a pointer
     test_input_7 = r"""
@@ -3763,7 +3754,7 @@ void foo(void) {
         name="TT",
         type=c_ast.PtrDecl(quals=[], type=c_ast.TypeDecl("TT", [], None, c_ast.IdType(["unsigned"]))),
     )
-    assert c_ast.compare_asts(tree7.ext[1].body.block_items[0], expected)
+    assert tree7.ext[1].body.block_items[0] == expected
 
     # redefine a name in the middle of a multi-declarator declaration
     test_input_8 = r"""
@@ -3797,9 +3788,9 @@ void foo(void) {
         ),
     )
 
-    assert c_ast.compare_asts(tree8.ext[1].body.block_items[0], expected_first)
-    assert c_ast.compare_asts(tree8.ext[1].body.block_items[1], expected_second)
-    assert c_ast.compare_asts(tree8.ext[1].body.block_items[2], expected_third)
+    assert tree8.ext[1].body.block_items[0] == expected_first
+    assert tree8.ext[1].body.block_items[1] == expected_second
+    assert tree8.ext[1].body.block_items[2] == expected_third
 
     # Don't test this until we have support for it
     # self.assertEqual(expand_init(items[0].init),
@@ -3839,7 +3830,7 @@ TT x = 5;
         body=c_ast.Compound([c_ast.Assignment(op="=", left=c_ast.Id("TT"), right=c_ast.Constant("int", "10"))]),
     )
 
-    assert c_ast.compare_asts(tree1.ext[1], expected1)
+    assert tree1.ext[1] == expected1
 
     # the scope of a parameter name in a function declaration ends at the
     # end of the declaration...so it is effectively never used; it's
@@ -3865,7 +3856,7 @@ TT x = 5;
             type=c_ast.TypeDecl("foo", [], None, c_ast.IdType(["void"])),
         ),
     )
-    assert c_ast.compare_asts(tree2.ext[1], expected2)
+    assert tree2.ext[1] == expected2
 
     # ensure an error is raised if a type, redeclared as a parameter, is
     # used as a type

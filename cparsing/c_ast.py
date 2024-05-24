@@ -6,7 +6,7 @@ import sys
 from collections import deque
 from io import StringIO
 from types import GeneratorType
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, Dict, Generator, List, Optional, Sequence
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, Dict, Generator, List, Literal, Optional, Sequence
 from typing import Union as TUnion
 
 from cparsing.utils import Coord
@@ -16,28 +16,13 @@ if sys.version_info >= (3, 10):
 elif TYPE_CHECKING:
     from typing_extensions import TypeAlias, TypeGuard
 else:
-    if sys.version_info >= (3, 9, 2):
-        from types import GenericAlias as _GenericAlias
-    else:
-        from typing import _GenericAlias
+    from cparsing.utils import _PlaceholderMeta
 
-    class _TypeGuardGenericAlias(_GenericAlias):
-        def __repr__(self):
-            return f"<placeholder for {super().__repr__()}>"
-
-    class _TypeGuardMeta(type):
-        def __getitem__(self, item: object) -> _TypeGuardGenericAlias:
-            return _TypeGuardGenericAlias(self, item)
-
-        def __repr__(self):
-            return f"<placeholder for {super().__repr__()}>"
-
-    class TypeGuard(metaclass=_TypeGuardMeta):
+    class TypeGuard(metaclass=_PlaceholderMeta):
         pass
 
     class TypeAlias:
-        def __repr__(self):
-            return f"<placeholder for {super().__repr__()}"
+        pass
 
 
 _SimpleNode: TypeAlias = "TUnion[Constant, Id, ArrayRef, StructRef, FuncCall]"
@@ -108,6 +93,14 @@ class AST:
 
     def __init__(self, *, coord: Optional[Coord] = None):
         self.coord = coord
+
+    def __eq__(self, other: object, /):
+        """Return whether two nodes have the same values (disregarding coordinates)."""
+
+        if not isinstance(other, type(self)):
+            return NotImplemented
+
+        return compare_asts(self, other)
 
 
 class File(AST):
@@ -295,6 +288,7 @@ class UnaryOp(AST):
     def __init__(self, op: str, expr: AST, *, coord: Optional[Coord] = None):
         self.op = op
         self.expr = expr
+        self.coord = coord
 
 
 class BinaryOp(AST):
@@ -404,7 +398,7 @@ class Decl(AST):
         self,
         name: Optional[str],
         quals: List[str],
-        align: List[Any],
+        align: List[Alignas],
         storage: List[str],
         funcspec: List[Any],
         type: AST,
@@ -515,7 +509,7 @@ class StaticAssert(AST):
 class Struct(AST):
     __slots__ = __match_args__ = _fields = ("name", "decls")
 
-    def __init__(self, name: str, decls: Optional[List[AST]], *, coord: Optional[Coord] = None):
+    def __init__(self, name: Optional[str], decls: Optional[List[AST]], *, coord: Optional[Coord] = None):
         self.name = name
         self.decls = decls
         self.coord = coord
@@ -591,7 +585,7 @@ class Typename(AST):
 class Union(AST):
     __slots__ = __match_args__ = _fields = ("name", "decls")
 
-    def __init__(self, name: str, decls: Optional[List[AST]], *, coord: Optional[Coord] = None):
+    def __init__(self, name: Optional[str], decls: Optional[List[AST]], *, coord: Optional[Coord] = None):
         self.name = name
         self.decls = decls
         self.coord = coord
@@ -611,6 +605,14 @@ def iter_child_nodes(node: AST) -> Generator[AST, Any, None]:
             for subsub in potential_subnode:  # pyright: ignore [reportUnknownVariableType]
                 if isinstance(subsub, AST):
                     yield subsub
+
+
+def walk(node: AST) -> Generator[AST, Any, None]:
+    stack: deque[AST] = deque([node])
+    while stack:
+        curr_node = stack.popleft()
+        stack.extend(iter_child_nodes(curr_node))
+        yield curr_node
 
 
 class NodeVisitor:
@@ -646,15 +648,6 @@ class NodeVisitor:
         """Called if no explicit visitor function exists for a node."""
 
         yield from iter_child_nodes(node)
-        return None
-
-
-def walk(node: AST) -> Generator[AST, Any, None]:
-    stack: deque[AST] = deque([node])
-    while stack:
-        curr_node = stack.popleft()
-        stack.extend(iter_child_nodes(curr_node))
-        yield curr_node
 
 
 class _NodePrettyPrinter(NodeVisitor):
@@ -838,8 +831,14 @@ class _Unparser(NodeVisitor):
             self.indent_level -= val
 
     @staticmethod
-    def _is_simple_node(node: AST) -> TypeGuard[_SimpleNode]:
+    def is_simple_node(node: AST) -> TypeGuard[_SimpleNode]:
         return isinstance(node, (Constant, Id, ArrayRef, StructRef, FuncCall))
+
+    def generic_visit(self, node: Optional[AST]) -> TUnion[Generator[AST, Any, None], Literal['']]:
+        if node is None:
+            return ""
+        else:
+            return super().generic_visit(node)
 
     def _visit_expression(self, node: AST) -> Generator[AST, str, str]:
         expr = yield node
@@ -859,7 +858,8 @@ class _Unparser(NodeVisitor):
         return f"({result})" if condition(node) else result
 
     def _parenthesize_unless_simple(self, node: AST) -> Generator[AST, str, str]:
-        return (yield from self._parenthesize_if(node, lambda n: not self._is_simple_node(n)))
+        result = yield from self._parenthesize_if(node, lambda n: not self.is_simple_node(n))
+        return result
 
     def _generate_struct_union_body(self, members: List[AST]) -> Generator[AST, str, str]:
         results: list[str] = []
@@ -1054,7 +1054,7 @@ class _Unparser(NodeVisitor):
         left = yield from self._parenthesize_if(
             node.left,
             lambda d: not (
-                self._is_simple_node(d)
+                self.is_simple_node(d)
                 or (
                     self.reduce_parentheses
                     and isinstance(d, BinaryOp)
@@ -1073,7 +1073,7 @@ class _Unparser(NodeVisitor):
         right = yield from self._parenthesize_if(
             node.right,
             lambda d: not (
-                self._is_simple_node(d)
+                self.is_simple_node(d)
                 or (
                     self.reduce_parentheses
                     and isinstance(d, BinaryOp)
@@ -1089,7 +1089,7 @@ class _Unparser(NodeVisitor):
         left = yield node.left
         return f"{left} {node.op} {right}"
 
-    def visit_IdentifierType(self, node: IdType) -> str:
+    def visit_IdType(self, node: IdType) -> str:
         return " ".join(node.names)
 
     def visit_Decl(self, node: Decl, *, no_type: bool = False) -> Generator[AST, str, str]:
