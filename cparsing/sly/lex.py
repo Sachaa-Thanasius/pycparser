@@ -38,8 +38,15 @@ from typing import TYPE_CHECKING, Any, Callable, ClassVar, Dict, Generator, Type
 
 if TYPE_CHECKING:
     from typing_extensions import Self
+else:
 
-CallableT = TypeVar('CallableT', bound=Callable[..., Any])
+    class Self:
+        """Placeholder for `typing.Self`."""
+
+
+_CallableT = TypeVar('_CallableT', bound=Callable[..., Any])
+
+_MISSING: Any = object()
 
 __all__ = ('Lexer', 'LexerStateChange')
 
@@ -179,10 +186,10 @@ class LexerMeta(type):
     def __prepare__(cls, name: str, bases: tuple[type, ...], **kwds: object) -> LexerMetaDict:
         d = LexerMetaDict()
 
-        def _(pattern: str, *extra: str) -> Callable[[CallableT], CallableT]:
+        def _(pattern: str, *extra: str) -> Callable[[_CallableT], _CallableT]:
             patterns = [pattern, *extra]
 
-            def decorate(func: CallableT) -> CallableT:
+            def decorate(func: _CallableT) -> _CallableT:
                 pattern = '|'.join(f'({pat})' for pat in patterns)
                 if hasattr(func, 'pattern'):
                     func.pattern = f'{pattern}|{func.pattern}'  # type: ignore # Runtime attribute access and assignment.
@@ -196,13 +203,13 @@ class LexerMeta(type):
         d['before'] = _Before
         return d
 
-    def __new__(cls, clsname: str, bases: tuple[type, ...], attributes: LexerMetaDict):
+    def __new__(cls, clsname: str, bases: tuple[type, ...], attributes: LexerMetaDict, **kwds: object):
         del attributes['_']
         del attributes['before']
 
         # Create attributes for use in the actual class body
         cls_attributes = {str(key): str(val) if isinstance(val, TokenStr) else val for key, val in attributes.items()}
-        self: type[Lexer] = super().__new__(cls, clsname, bases, cls_attributes)
+        self: type[Lexer] = super().__new__(cls, clsname, bases, cls_attributes, **kwds)
 
         # Attach various metadata to the class
         self._attributes = dict(attributes)
@@ -222,7 +229,7 @@ class Lexer(metaclass=LexerMeta):
     regex_module = re
 
     _token_names: ClassVar[set[str]] = set()
-    _token_funcs: ClassVar[dict[str, Callable[[Self, Token], Any]]] = {}
+    _token_funcs: ClassVar[dict[str, Callable[[Lexer, Token], Any]]] = {}
     _ignored_tokens: ClassVar[set[str]] = set()
     _remapping: ClassVar[dict[str, dict[str, str]]] = {}
     _delete: ClassVar[list[str]] = []
@@ -347,7 +354,7 @@ class Lexer(metaclass=LexerMeta):
             # Make sure the individual regex compiles properly
             try:
                 cpat = cls.regex_module.compile(part, cls.reflags)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 raise PatternError(f'Invalid regex for token {tokname}') from e
 
             # Verify that the pattern doesn't match the empty string
@@ -398,10 +405,16 @@ class Lexer(metaclass=LexerMeta):
         Pop a lexer state from the stack
         '''
 
+        assert self.__state_stack
         self.begin(self.__state_stack.pop())
 
     def tokenize(self, text: str, lineno: int = 1, index: int = 0) -> Generator[Token, Any, None]:
-        _ignored_tokens = _master_re = _ignore = _token_funcs = _literals = _remapping = None
+        _ignored_tokens: set[str] = _MISSING
+        _master_re: re.Pattern[str] = _MISSING
+        _ignore: str = _MISSING
+        _token_funcs: dict[str, Callable[[Lexer, Token], Any]] = _MISSING
+        _literals: set[str] = _MISSING
+        _remapping: dict[str, dict[str, str]] = _MISSING
 
         # --- Support for state changes
         def _set_state(cls: type[Lexer]) -> None:

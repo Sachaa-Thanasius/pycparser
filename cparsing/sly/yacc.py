@@ -183,14 +183,14 @@ class YaccProduction:
                 result = r
         return result
 
-    def __getattr__(self, name: str):
+    def __getattr__(self, name: str) -> Any:
         if name in self._namemap:
             return self._namemap[name](self._slice)
         else:
             nameset = '{' + ', '.join(self._namemap) + '}'
             raise AttributeError(f'No symbol {name}. Must be one of {nameset}.')
 
-    def __setattr__(self, name: str, value):
+    def __setattr__(self, name: str, value: object) -> None:
         if name[:1] == '_':
             super().__setattr__(name, value)
         else:
@@ -237,7 +237,7 @@ class Production:
         number: int,
         name: str,
         prod: Sequence[str],
-        precedence=('right', 0),
+        precedence: tuple[str, int] = ('right', 0),
         func=None,
         file: str = '',
         line: int = 0,

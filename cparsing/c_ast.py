@@ -1,29 +1,14 @@
 """AST nodes and tools."""
-# ruff: noqa: A002
 
 import contextlib
-import sys
 from collections import deque
 from io import StringIO
 from types import GeneratorType
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, Dict, Generator, List, Literal, Optional, Sequence
+from typing import Any, Callable, ClassVar, Dict, Generator, List, Literal, Optional, Sequence
 from typing import Union as TUnion
 
+from cparsing._typing_compat import TypeAlias, TypeGuard
 from cparsing.utils import Coord
-
-if sys.version_info >= (3, 10):
-    from typing import TypeAlias, TypeGuard
-elif TYPE_CHECKING:
-    from typing_extensions import TypeAlias, TypeGuard
-else:
-    from cparsing.utils import _PlaceholderMeta
-
-    class TypeGuard(metaclass=_PlaceholderMeta):
-        pass
-
-    class TypeAlias:
-        pass
-
 
 _SimpleNode: TypeAlias = "TUnion[Constant, Id, ArrayRef, StructRef, FuncCall]"
 
@@ -84,6 +69,8 @@ __all__ = (
     "unparse",
     "compare_asts",
 )
+
+# region ---- Nodes
 
 
 class AST:
@@ -155,9 +142,9 @@ class Compound(AST):
         self.coord = coord
 
 
-# ======== Flow control
+# -------- Flow control
 
-# ==== Looping
+# ---- Looping
 
 
 class For(AST):
@@ -197,7 +184,7 @@ class DoWhile(AST):
         self.coord = coord
 
 
-# ==== Other flow control
+# ---- Other flow control
 
 
 class Goto(AST):
@@ -269,7 +256,7 @@ class Return(AST):
         self.coord = coord
 
 
-# ======== Operations
+# -------- Operations
 
 
 class Assignment(AST):
@@ -311,7 +298,7 @@ class TernaryOp(AST):
         self.coord = coord
 
 
-# ======== Base
+# -------- Base
 
 
 class Pragma(AST):
@@ -343,7 +330,7 @@ class EmptyStatement(AST):
     __slots__ = _fields = ()
 
 
-# ======== Other
+# -------- Other
 
 
 class ArrayDecl(AST):
@@ -591,7 +578,10 @@ class Union(AST):
         self.coord = coord
 
 
-# ======== AST utilities
+# endregion
+
+
+# region AST utilities
 
 
 def iter_child_nodes(node: AST) -> Generator[AST, Any, None]:
@@ -1443,9 +1433,6 @@ def unparse(node: AST, *, reduce_parentheses: bool = False) -> str:
     return unparser.visit(node)
 
 
-# NodeOrNodeListT = TypeVar("NodeOrNodeListT", bound=TUnion[AST, Sequence[AST]])
-
-
 def compare_asts(first_node: TUnion[AST, Sequence[AST]], second_node: TUnion[AST, Sequence[AST]]) -> bool:
     """Compare two AST nodes for equality, to see if they have the same field structure with the same values.
 
@@ -1484,3 +1471,6 @@ def compare_asts(first_node: TUnion[AST, Sequence[AST]], second_node: TUnion[AST
             return False
 
     return True
+
+
+# endregion

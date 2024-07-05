@@ -1,7 +1,7 @@
 [tool.ruff]
 include = ["cparsing/*"]
 line-length = 120
-target-version = "py38"
+target-version = "py39"
 
 [tool.ruff.lint]
 select = [
@@ -25,35 +25,35 @@ select = [
     "PIE",
     "T20",
     "PYI",
+    "PT",
     "RSE",
     "RET",
     "SIM",
     "TID",
     "PTH",
     "ERA",
-    "PD",
     "PL",
     "TRY",
-    "NPY",
     "RUF",
 ]
 extend-ignore = [
-    "S101",   # Use of assert here is a known quantity. Blame typing memes.
-    "SIM105", # contextlib.suppress is a stylistic choice with additional overhead.
-    "C90",    # McCabe complexity memes.
+    "S101",   # Use of assert here is a known quantity for typing cases.
+    "SIM105", # Suppressable exception. contextlib.suppress is a stylistic choice with overhead.
+    "C90",    # McCabe complexity.
     "PD011",  # Erroneous issue that triggers for any .values attribute access at all.
     "S311",   # No need for cryptographically secure random number generation in this use case.
-    "ANN101", # Type of self is implicit.
-    "ANN102", # Type of cls is implicit.
-    "ANN204", # Special method return types are known by type checker.
-    "ANN401", # Not sure how else to type *args and **kwargs when they could be anything.
-    "PLR",    # Complexity things.
+    "ANN101", # Type of Self for self is usually implicit and/or known by the type-checker.
+    "ANN102", # Type of type[Self] for cls is usually implicit and/or known by the type-checker.
+    "ANN204", # Special method return types are usually implicit and/or known by type checker.
+    "ANN401", # Any is needed for some parameters.
+    "UP038",  # isinstance performs better with tuples than unions.
+    "PT001",  # pytest recommends against empty parentheses on pytest.fixture.
     "PYI036", # Bug with annotations for __exit__.
+    "PLR",    # Complexity things.
     # Recommended by Ruff when using Ruff format.
     "E111",
     "E114",
     "E117",
-    "Q003",
     "COM812",
     "COM819",
     "E501",
@@ -63,7 +63,7 @@ extend-ignore = [
     "TRY003",
     "EM101",
     "EM102",
-    "SIM108", # Don't always use ternary, for the sake of readability.
+    "SIM108", # Don't always use ternary for readability.
     "RET505", # Allow returns in else and elif for readability.
     "ERA001", # Commented code.
 ]
@@ -77,6 +77,19 @@ unfixable = [
     "ANN201", # Allow lack of return annotations. Tests return None usually.
     "ANN202",
 ]
+"cparsing/c_lexer.py" = [
+    "RUF012", # Mutable class attributes.
+    "F821",   # Undefined names are allowed because of metaclass hackery.
+]
+"cparsing/c_parser.py" = [
+    "ANN201", # Return annotations aren't helpful here.
+    "F811",   # Redefining methods is allowed because of metaclass hackery.
+    "F821",   # Undefined names are allowed because of metaclass hackery.
+    "S105",
+]
+"cparsing/c_ast.py" = [
+    "A002", # Allow some shadowing.
+]
 
 [tool.ruff.lint.pyupgrade]
 keep-runtime-typing = true
@@ -86,7 +99,7 @@ quote-style = "preserve"
 
 [tool.pyright]
 include = ["cparsing"]
-pythonVersion = "3.8"
+pythonVersion = "3.9"
 typeCheckingMode = "strict"
 
 reportPrivateUsage = "none"

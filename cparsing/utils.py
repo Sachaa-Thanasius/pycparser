@@ -1,21 +1,10 @@
 """Some utilities for internal use."""
 
 import dataclasses
-import sys
-from typing import TYPE_CHECKING, Any, Optional
+from typing import Any, Optional
 
+from cparsing._typing_compat import Self
 from cparsing.sly import Parser
-
-if sys.version_info >= (3, 11):
-    from typing import Self
-elif TYPE_CHECKING:
-    from typing_extensions import Self
-else:
-
-    class Self:
-        def __repr__(self):
-            return "<placeholder for typing.Self>"
-
 
 __all__ = ("Coord",)
 
@@ -49,26 +38,3 @@ class Coord:
 
     def __str__(self):
         return f"{self.filename}:{self.line_start}:{(self.col_start, self.col_end)}"
-
-
-if TYPE_CHECKING:
-
-    class _GenericAlias:
-        def __init__(self, *args: object, **kwargs: object): ...
-elif sys.version_info >= (3, 9, 2):
-    from types import GenericAlias as _GenericAlias
-else:
-    from typing import _GenericAlias
-
-
-class _PlaceholderGenericAlias(_GenericAlias):
-    def __repr__(self):
-        return f"<placeholder for {super().__repr__()}>"
-
-
-class _PlaceholderMeta(type):
-    def __getitem__(self, item: object) -> _PlaceholderGenericAlias:
-        return _PlaceholderGenericAlias(self, item)
-
-    def __repr__(self):
-        return f"<placeholder for {super().__repr__()}>"
