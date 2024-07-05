@@ -2,18 +2,17 @@
 
 import contextlib
 from collections import deque
+from collections.abc import Generator, Sequence
 from io import StringIO
 from types import GeneratorType
-from typing import Any, Callable, ClassVar, Dict, Generator, List, Literal, Optional, Sequence
+from typing import Any, Callable, ClassVar, Literal, Optional
 from typing import Union as TUnion
 
 from cparsing._typing_compat import TypeAlias, TypeGuard
 from cparsing.utils import Coord
 
-_SimpleNode: TypeAlias = "TUnion[Constant, Id, ArrayRef, StructRef, FuncCall]"
-
-
 __all__ = (
+    # Nodes
     "AST",
     "File",
     "ExprList",
@@ -64,13 +63,16 @@ __all__ = (
     "Typedef",
     "Typename",
     "Union",
+    # Utilities
+    "iter_child_nodes",
+    "walk",
     "NodeVisitor",
     "dump",
     "unparse",
     "compare_asts",
 )
 
-# region ---- Nodes
+# region ---- AST Nodes
 
 
 class AST:
@@ -93,7 +95,7 @@ class AST:
 class File(AST):
     __slots__ = __match_args__ = _fields = ("ext",)
 
-    def __init__(self, ext: List[AST], *, coord: Optional[Coord] = None):
+    def __init__(self, ext: list[AST], *, coord: Optional[Coord] = None):
         self.ext = ext
         self.coord = coord
 
@@ -101,7 +103,7 @@ class File(AST):
 class ExprList(AST):
     __slots__ = __match_args__ = _fields = ("exprs",)
 
-    def __init__(self, exprs: List[AST], *, coord: Optional[Coord] = None):
+    def __init__(self, exprs: list[AST], *, coord: Optional[Coord] = None):
         self.exprs = exprs
         self.coord = coord
 
@@ -118,14 +120,14 @@ class Enumerator(AST):
 class EnumeratorList(AST):
     __slots__ = __match_args__ = _fields = ("enumerators",)
 
-    def __init__(self, enumerators: List[Enumerator], *, coord: Optional[Coord] = None):
+    def __init__(self, enumerators: list[Enumerator], *, coord: Optional[Coord] = None):
         self.enumerators = enumerators
 
 
 class ParamList(AST):
     __slots__ = __match_args__ = _fields = ("params",)
 
-    def __init__(self, params: List[AST], *, coord: Optional[Coord] = None):
+    def __init__(self, params: list[AST], *, coord: Optional[Coord] = None):
         self.params = params
         self.coord = coord
 
@@ -137,7 +139,7 @@ class EllipsisParam(AST):
 class Compound(AST):
     __slots__ = __match_args__ = _fields = ("block_items",)
 
-    def __init__(self, block_items: List[AST], *, coord: Optional[Coord] = None):
+    def __init__(self, block_items: list[AST], *, coord: Optional[Coord] = None):
         self.block_items = block_items
         self.coord = coord
 
@@ -216,7 +218,7 @@ class Switch(AST):
 class Case(AST):
     __slots__ = __match_args__ = _fields = ("expr", "stmts")
 
-    def __init__(self, expr: AST, stmts: List[AST], *, coord: Optional[Coord] = None):
+    def __init__(self, expr: AST, stmts: list[AST], *, coord: Optional[Coord] = None):
         self.expr = expr
         self.stmts = stmts
         self.coord = coord
@@ -225,7 +227,7 @@ class Case(AST):
 class Default(AST):
     __slots__ = __match_args__ = _fields = ("stmts",)
 
-    def __init__(self, stmts: List[AST], *, coord: Optional[Coord] = None):
+    def __init__(self, stmts: list[AST], *, coord: Optional[Coord] = None):
         self.stmts = stmts
         self.coord = coord
 
@@ -336,7 +338,7 @@ class EmptyStatement(AST):
 class ArrayDecl(AST):
     __slots__ = __match_args__ = _fields = ("type", "dim", "dim_quals")
 
-    def __init__(self, type: AST, dim: Optional[AST], dim_quals: List[str], *, coord: Optional[Coord] = None):
+    def __init__(self, type: AST, dim: Optional[AST], dim_quals: list[str], *, coord: Optional[Coord] = None):
         self.type = type
         self.dim = dim
         self.dim_quals = dim_quals
@@ -384,10 +386,10 @@ class Decl(AST):
     def __init__(
         self,
         name: Optional[str],
-        quals: List[str],
-        align: List[Alignas],
-        storage: List[str],
-        funcspec: List[Any],
+        quals: list[str],
+        align: list[Alignas],
+        storage: list[str],
+        funcspec: list[Any],
         type: AST,
         init: Optional[AST],
         bitsize: Optional[AST],
@@ -408,7 +410,7 @@ class Decl(AST):
 class DeclList(AST):
     __slots__ = __match_args__ = _fields = ("decls",)
 
-    def __init__(self, decls: List[Decl], *, coord: Optional[Coord] = None):
+    def __init__(self, decls: list[Decl], *, coord: Optional[Coord] = None):
         self.decls = decls
         self.coord = coord
 
@@ -443,7 +445,7 @@ class FuncDecl(AST):
 class FuncDef(AST):
     __slots__ = __match_args__ = _fields = ("decl", "param_decls", "body")
 
-    def __init__(self, decl: AST, param_decls: Optional[List[AST]], body: AST, *, coord: Optional[Coord] = None):
+    def __init__(self, decl: AST, param_decls: Optional[list[AST]], body: AST, *, coord: Optional[Coord] = None):
         self.decl = decl
         self.param_decls = param_decls
         self.body = body
@@ -453,7 +455,7 @@ class FuncDef(AST):
 class IdType(AST):
     __slots__ = __match_args__ = _fields = ("names",)
 
-    def __init__(self, names: List[str], *, coord: Optional[Coord] = None):
+    def __init__(self, names: list[str], *, coord: Optional[Coord] = None):
         self.names = names
         self.coord = coord
 
@@ -461,7 +463,7 @@ class IdType(AST):
 class InitList(AST):
     __slots__ = __match_args__ = _fields = ("exprs",)
 
-    def __init__(self, exprs: List[AST], *, coord: Optional[Coord] = None):
+    def __init__(self, exprs: list[AST], *, coord: Optional[Coord] = None):
         self.exprs = exprs
         self.coord = coord
 
@@ -469,7 +471,7 @@ class InitList(AST):
 class NamedInitializer(AST):
     __slots__ = __match_args__ = _fields = ("name", "expr")
 
-    def __init__(self, name: List[AST], expr: AST, *, coord: Optional[Coord] = None):
+    def __init__(self, name: list[AST], expr: AST, *, coord: Optional[Coord] = None):
         self.name = name
         self.expr = expr
         self.coord = coord
@@ -496,7 +498,7 @@ class StaticAssert(AST):
 class Struct(AST):
     __slots__ = __match_args__ = _fields = ("name", "decls")
 
-    def __init__(self, name: Optional[str], decls: Optional[List[AST]], *, coord: Optional[Coord] = None):
+    def __init__(self, name: Optional[str], decls: Optional[list[AST]], *, coord: Optional[Coord] = None):
         self.name = name
         self.decls = decls
         self.coord = coord
@@ -537,8 +539,8 @@ class Typedef(AST):
     def __init__(
         self,
         name: Optional[str],
-        quals: List[str],
-        storage: List[Any],
+        quals: list[str],
+        storage: list[Any],
         type: AST,
         *,
         coord: Optional[Coord] = None,
@@ -556,7 +558,7 @@ class Typename(AST):
     def __init__(
         self,
         name: Optional[str],
-        quals: List[str],
+        quals: list[str],
         align: Optional[Any],
         type: AST,
         *,
@@ -572,7 +574,7 @@ class Typename(AST):
 class Union(AST):
     __slots__ = __match_args__ = _fields = ("name", "decls")
 
-    def __init__(self, name: Optional[str], decls: Optional[List[AST]], *, coord: Optional[Coord] = None):
+    def __init__(self, name: Optional[str], decls: Optional[list[AST]], *, coord: Optional[Coord] = None):
         self.name = name
         self.decls = decls
         self.coord = coord
@@ -581,7 +583,10 @@ class Union(AST):
 # endregion
 
 
-# region AST utilities
+# region ---- AST Utilities
+
+
+_SimpleNode: TypeAlias = TUnion[Constant, Id, ArrayRef, StructRef, FuncCall]
 
 
 def iter_child_nodes(node: AST) -> Generator[AST, Any, None]:
@@ -701,7 +706,7 @@ class _NodePrettyPrinter(NodeVisitor):
         finally:
             self.write(end)
 
-    def generic_visit_list(self, list_field: List[Any]) -> Generator[AST, Any, None]:
+    def generic_visit_list(self, list_field: list[Any]) -> Generator[AST, Any, None]:
         if not list_field:
             self.write("[]")
         else:
@@ -788,7 +793,7 @@ class _Unparser(NodeVisitor):
 
     # fmt: off
     # Precedence map of binary operators:
-    precedence_map: ClassVar[Dict[str, int]] = {
+    precedence_map: ClassVar[dict[str, int]] = {
         # Should be in sync with c_parser.CParser.precedence
         # Higher numbers are stronger binding
         "||": 0,
@@ -851,7 +856,7 @@ class _Unparser(NodeVisitor):
         result = yield from self._parenthesize_if(node, lambda n: not self.is_simple_node(n))
         return result
 
-    def _generate_struct_union_body(self, members: List[AST]) -> Generator[AST, str, str]:
+    def _generate_struct_union_body(self, members: list[AST]) -> Generator[AST, str, str]:
         results: list[str] = []
         for decl in members:
             decl_str = yield from self._generate_stmt(decl)
@@ -923,7 +928,7 @@ class _Unparser(NodeVisitor):
     def _generate_type(
         self,
         node: AST,
-        modifiers: Optional[List[Any]] = None,
+        modifiers: Optional[list[Any]] = None,
         emit_declname: bool = True,
     ) -> Generator[AST, str, str]:
         """Recursive generation from a type node. n is the type node.
@@ -1148,7 +1153,7 @@ class _Unparser(NodeVisitor):
         return ", ".join(visited_subexprs)
 
     def visit_Enum(self, node: Enum) -> Generator[AST, str, str]:
-        results: List[str] = [f"enum {(node.name or '')}"]
+        results: list[str] = [f"enum {(node.name or '')}"]
 
         members = None if node.values is None else node.values.enumerators
         if members is not None:
@@ -1357,7 +1362,7 @@ class _Unparser(NodeVisitor):
         return "..."
 
     def visit_Struct(self, node: Struct) -> Generator[AST, str, str]:
-        results: List[str] = [f"struct {(node.name or '')}"]
+        results: list[str] = [f"struct {(node.name or '')}"]
 
         members = node.decls
         if members is not None:
@@ -1374,7 +1379,7 @@ class _Unparser(NodeVisitor):
         return "".join(results)
 
     def visit_Union(self, node: Union) -> Generator[AST, str, str]:
-        results: List[str] = [f"union {(node.name or '')}"]
+        results: list[str] = [f"union {(node.name or '')}"]
 
         members = node.decls
         if members is not None:
@@ -1443,7 +1448,7 @@ def compare_asts(first_node: TUnion[AST, Sequence[AST]], second_node: TUnion[AST
     The algorithm is modified from https://stackoverflow.com/a/19598419 to be iterative instead of recursive.
     """
 
-    nodes: deque[tuple[TUnion[AST, List[AST], Any], TUnion[AST, List[AST], Any]]] = deque([(first_node, second_node)])
+    nodes: deque[tuple[TUnion[AST, list[AST], Any], TUnion[AST, list[AST], Any]]] = deque([(first_node, second_node)])
 
     while nodes:
         node1, node2 = nodes.pop()

@@ -31,20 +31,11 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 # -----------------------------------------------------------------------------
 
-from __future__ import annotations
-
 import re
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, Dict, Generator, TypeVar
+from collections.abc import Generator
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, Optional
 
-if TYPE_CHECKING:
-    from typing_extensions import Self
-else:
-
-    class Self:
-        """Placeholder for `typing.Self`."""
-
-
-_CallableT = TypeVar('_CallableT', bound=Callable[..., Any])
+from cparsing._typing_compat import CallableT, Self
 
 _MISSING: Any = object()
 
@@ -83,7 +74,7 @@ class LexerStateChange(Exception):
     Exception raised to force a lexing state change
     '''
 
-    def __init__(self, newstate: type[Lexer], tok: Token | None = None):
+    def __init__(self, newstate: type["Lexer"], tok: Optional["Token"] = None):
         self.newstate = newstate
         self.tok = tok
 
@@ -109,10 +100,10 @@ class Token:
 
 
 class TokenStr(str):
-    def __new__(cls, value: object, key: str, remap: dict[tuple[str, Any], Any] | None = None):
+    def __new__(cls, value: object, key: str, remap: Optional[dict[tuple[str, Any], Any]] = None):
         return super().__new__(cls, value)
 
-    def __init__(self, value: object, key: str, remap: dict[tuple[str, Any], Any] | None = None):
+    def __init__(self, value: object, key: str, remap: Optional[dict[tuple[str, Any], Any]] = None):
         self.key = key
         self.remap = remap
 
@@ -133,7 +124,7 @@ class _Before:
         self.pattern = pattern
 
 
-class LexerMetaDict(Dict[str, Any]):
+class LexerMetaDict(dict[str, Any]):
     '''
     Special dictionary that prohibits duplicate definitions in lexer specifications.
     '''
@@ -186,10 +177,10 @@ class LexerMeta(type):
     def __prepare__(cls, name: str, bases: tuple[type, ...], **kwds: object) -> LexerMetaDict:
         d = LexerMetaDict()
 
-        def _(pattern: str, *extra: str) -> Callable[[_CallableT], _CallableT]:
+        def _(pattern: str, *extra: str) -> Callable[[CallableT], CallableT]:
             patterns = [pattern, *extra]
 
-            def decorate(func: _CallableT) -> _CallableT:
+            def decorate(func: CallableT) -> CallableT:
                 pattern = '|'.join(f'({pat})' for pat in patterns)
                 if hasattr(func, 'pattern'):
                     func.pattern = f'{pattern}|{func.pattern}'  # type: ignore # Runtime attribute access and assignment.
@@ -221,7 +212,7 @@ class LexerMeta(type):
 
 
 class Lexer(metaclass=LexerMeta):
-    # These attributes may be defined in subclasses
+    # These attributes may be redefined in subclasses.
     tokens: ClassVar[set[str]] = set()
     literals: ClassVar[set[str]] = set()
     ignore: str = ''
@@ -229,15 +220,15 @@ class Lexer(metaclass=LexerMeta):
     regex_module = re
 
     _token_names: ClassVar[set[str]] = set()
-    _token_funcs: ClassVar[dict[str, Callable[[Lexer, Token], Any]]] = {}
+    _token_funcs: ClassVar[dict[str, Callable[["Lexer", Token], Any]]] = {}
     _ignored_tokens: ClassVar[set[str]] = set()
     _remapping: ClassVar[dict[str, dict[str, str]]] = {}
     _delete: ClassVar[list[str]] = []
     _remap: ClassVar[dict[tuple[str, Any], Any]] = {}
 
     # Internal attributes
-    __state_stack: list[type[Lexer]] | None = None
-    __set_state: Callable[[type[Lexer]], None] | None = None
+    __state_stack: Optional[list[type["Lexer"]]] = None
+    __set_state: Optional[Callable[[type["Lexer"]], None]] = None
 
     if TYPE_CHECKING:
         _attributes: ClassVar[dict[str, Any]]
@@ -378,7 +369,7 @@ class Lexer(metaclass=LexerMeta):
         if not all(isinstance(lit, str) for lit in cls.literals):
             raise LexerBuildError('literals must be specified as strings')
 
-    def begin(self, cls: type[Lexer]) -> None:
+    def begin(self, cls: type["Lexer"]) -> None:
         '''
         Begin a new lexer state
         '''
@@ -390,7 +381,7 @@ class Lexer(metaclass=LexerMeta):
             self.__set_state(cls)
         self.__class__ = cls
 
-    def push_state(self, cls: type[Lexer]) -> None:
+    def push_state(self, cls: type["Lexer"]) -> None:
         '''
         Push a new lexer state onto the stack
         '''
@@ -467,6 +458,7 @@ class Lexer(metaclass=LexerMeta):
                 if m:
                     tok.end = index = m.end()
                     tok.value = m.group()
+                    assert m.lastgroup  # The matched group will always have a name.
                     tok.type = m.lastgroup
 
                     if tok.type in _remapping:
@@ -516,4 +508,5 @@ class Lexer(metaclass=LexerMeta):
 
     # Default implementations of the error handler. May be changed in subclasses
     def error(self, t: Token) -> Any:
+        assert isinstance(self.index, int)  # pyright: ignore [reportUnknownMemberType] Should always be true at runtime.
         raise LexError(f'Illegal character {t.value[0]!r} at index {self.index}', t.value, self.index)

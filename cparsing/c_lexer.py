@@ -1,20 +1,14 @@
 # pyright: reportUndefinedVariable=none, reportIndexIssue=none
 import re
-from typing import TYPE_CHECKING, Callable, ChainMap, NoReturn, Optional, Set, Tuple
+from collections import ChainMap
+from typing import TYPE_CHECKING, NoReturn, Optional
 
 from cparsing.sly import Lexer
 from cparsing.sly.lex import Token
 
 if TYPE_CHECKING:
-    from typing import Any, Protocol, TypeVar, cast
-
-    CallableT = TypeVar("CallableT", bound=Callable[..., Any])
-
-    class _RuleDecorator(Protocol):
-        def __call__(self, rule: str, *extras: str) -> Callable[[CallableT], CallableT]: ...
-
-    # Typing hack to account for `_` existing in a Lexer class's namespace only during class creation.
-    _ = cast(_RuleDecorator, object())
+    # Typing hack.
+    from cparsing._typing_compat import _
 
 
 __all__ = ("CLexError", "CLexer")
@@ -23,7 +17,7 @@ __all__ = ("CLexError", "CLexer")
 class CLexError(Exception):
     """Exception raised when the CLexer can't handle an invalid token."""
 
-    def __init__(self, message: str, text: str, error_coords: Tuple[int, int]):
+    def __init__(self, message: str, text: str, error_coords: tuple[int, int]):
         super().__init__(message)
         self.text = text
         self.error_coords = error_coords
@@ -100,14 +94,14 @@ def _find_token_column(text: str, t: Token) -> int:
 class CLexer(Lexer):
     # ==== Reserved keywords
     # fmt: off
-    keywords: Set[str] = {
+    keywords: set[str] = {
         AUTO, BREAK, CASE, CHAR, CONST, CONTINUE, DEFAULT, DO, DOUBLE, ELSE, ENUM,
         EXTERN, FLOAT, FOR, GOTO, IF, INLINE, INT, LONG, REGISTER, OFFSETOF,
         RESTRICT, RETURN, SHORT, SIGNED, SIZEOF, STATIC, STRUCT, SWITCH, TYPEDEF,
         UNION, UNSIGNED, VOID, VOLATILE, WHILE, INT128,
     }
 
-    keywords_new: Set[str] = {
+    keywords_new: set[str] = {
         ALIGNAS_, ALIGNOF_, ATOMIC_, BOOL_, COMPLEX_, NORETURN_, PRAGMA_, STATIC_ASSERT_, THREAD_LOCAL_,
     }
 

@@ -72,10 +72,8 @@ unfixable = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"cparsing/tests/*" = [
-    "T201",   # Allow printing.
-    "ANN201", # Allow lack of return annotations. Tests return None usually.
-    "ANN202",
+"**/__init__.py" = [
+    "F403", # Ruff doesn't understand using star imports to export names in a package.
 ]
 "cparsing/c_lexer.py" = [
     "RUF012", # Mutable class attributes.
@@ -89,6 +87,11 @@ unfixable = [
 ]
 "cparsing/c_ast.py" = [
     "A002", # Allow some shadowing.
+]
+"cparsing/tests/*" = [
+    "T201",   # Allow printing.
+    "ANN201", # Allow lack of return annotations. Tests return None usually.
+    "ANN202",
 ]
 
 [tool.ruff.lint.pyupgrade]

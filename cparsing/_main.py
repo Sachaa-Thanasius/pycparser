@@ -1,22 +1,19 @@
 import os
-import sys
 from collections import ChainMap
-from typing import TYPE_CHECKING, Sequence, Type, Union
+from collections.abc import Sequence
+from typing import Union
 
 from cparsing import c_ast
 from cparsing.c_lexer import CLexer
 from cparsing.c_parser import CParser
 
-if sys.version_info >= (3, 9) or TYPE_CHECKING:
-    StrPath = Union[str, os.PathLike[str]]
-else:
-    StrPath = Union[str, os.PathLike]
+_StrPath = Union[str, os.PathLike[str]]
 
 
 __all__ = ("parse", "preprocess_file", "parse_file")
 
 
-def parse(source: str, filename: str = "", parser_type: Type[CParser] = CParser) -> c_ast.File:
+def parse(source: str, filename: str = "", parser_type: type[CParser] = CParser) -> c_ast.File:
     scope_stack: ChainMap[str, bool] = ChainMap()
     lexer = CLexer(scope_stack)
     parser = parser_type(scope_stack)
@@ -61,13 +58,13 @@ def preprocess_file(filename: str, cpp_path: str = "cpp", cpp_args: Sequence[str
 
 
 def parse_file(
-    file: StrPath,
+    file: _StrPath,
     encoding: str = "utf-8",
     *,
     use_cpp: bool = False,
     cpp_path: str = "cpp",
     cpp_args: Sequence[str] = (),
-    parser_type: Type[CParser] = CParser,
+    parser_type: type[CParser] = CParser,
 ) -> c_ast.File:
     if use_cpp:
         source = preprocess_file(os.fspath(file), cpp_path, cpp_args)

@@ -1,41 +1,18 @@
 # pyright: reportRedeclaration=none, reportUndefinedVariable=none
 
-import dataclasses
-import sys
-from typing import TYPE_CHECKING, Any, ChainMap, Dict, List, Optional, Tuple, TypedDict, Union
+from collections import ChainMap
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Optional, TypedDict, Union
 
 from cparsing import c_ast
+from cparsing._typing_compat import NotRequired, Self
 from cparsing.c_lexer import CLexer
 from cparsing.sly import Parser
 from cparsing.utils import Coord
 
 if TYPE_CHECKING:
-    from typing import Callable, Protocol, TypeVar, cast
-
-    from typing_extensions import Self
-
-    CallableT = TypeVar("CallableT", bound=Callable[..., Any])
-
-    class _RuleDecorator(Protocol):
-        def __call__(self, rule: str, *extras: str) -> Callable[[CallableT], CallableT]: ...
-
-    # Typing hack to account for _ existing in a Parser class's namespace only during class creation.
-    _ = cast(_RuleDecorator, object())
-else:
-
-    class Self:
-        pass
-
-
-if sys.version_info >= (3, 11):
-    from typing import NotRequired
-elif TYPE_CHECKING:
-    from typing_extensions import NotRequired
-else:
-    from cparsing.utils import _PlaceholderMeta
-
-    class NotRequired(metaclass=_PlaceholderMeta):
-        pass
+    # Typing hack.
+    from cparsing._typing_compat import _
 
 
 class _StructDeclaratorDict(TypedDict):
@@ -45,36 +22,36 @@ class _StructDeclaratorDict(TypedDict):
 
 
 class _DeclSpecifierDict(TypedDict):
-    qual: List[str]
-    storage: List[str]
-    type: List[c_ast.IdType]
-    function: List[Any]
-    alignment: List[c_ast.Alignas]
+    qual: list[str]
+    storage: list[str]
+    type: list[c_ast.IdType]
+    function: list[Any]
+    alignment: list[c_ast.Alignas]
 
 
-@dataclasses.dataclass
+@dataclass
 class DeclSpecifier:
     """Declaration specifiers for C declarations.
 
     Attributes
     ----------
-    qual: List[str]
+    qual: list[str]
         A list of type qualifiers. Defaults to an empty list.
-    storage: List[str]
+    storage: list[str]
         A list of storage type qualifiers. Defaults to an empty list.
-    type: List[c_ast.IdType]
+    type: list[c_ast.IdType]
         A list of type specifiers. Defaults to an empty list.
-    function: List[Any]
+    function: list[Any]
         A list of function specifiers. Defaults to an empty list.
-    alignment: List[c_ast.Alignas]
+    alignment: list[c_ast.Alignas]
         A list of alignment specifiers. Defaults to an empty list.
     """
 
-    qual: List[str] = dataclasses.field(default_factory=list)
-    storage: List[str] = dataclasses.field(default_factory=list)
-    type: List[c_ast.IdType] = dataclasses.field(default_factory=list)
-    function: List[Any] = dataclasses.field(default_factory=list)
-    alignment: List[c_ast.Alignas] = dataclasses.field(default_factory=list)
+    qual: list[str] = field(default_factory=list)
+    storage: list[str] = field(default_factory=list)
+    type: list[c_ast.IdType] = field(default_factory=list)
+    function: list[Any] = field(default_factory=list)
+    alignment: list[c_ast.Alignas] = field(default_factory=list)
 
     @classmethod
     def create_or_update(cls, decl_spec: Optional[Self], new_item: Any, kind: str, *, append: bool = False) -> Self:
@@ -85,7 +62,7 @@ class DeclSpecifier:
         """
 
         spec = decl_spec or cls()
-        subspec_list: List[Any] = getattr(spec, kind)
+        subspec_list: list[Any] = getattr(spec, kind)
 
         if append:
             subspec_list.append(new_item)
@@ -98,7 +75,7 @@ class DeclSpecifier:
 __all__ = ("CParseError", "CParser")
 
 
-def _fix_atomic_specifiers_once(decl: Any) -> Tuple[Any, bool]:
+def _fix_atomic_specifiers_once(decl: Any) -> tuple[Any, bool]:
     """Performs one "fix" round of atomic specifiers.
     Returns (modified_decl, found) where found is True iff a fix was made.
     """
@@ -157,7 +134,7 @@ def fix_atomic_specifiers(decl: Any) -> Any:
     return decl
 
 
-def _extract_nested_case(case_node: Union[c_ast.Case, c_ast.Default], stmts_list: List[Any]) -> None:
+def _extract_nested_case(case_node: Union[c_ast.Case, c_ast.Default], stmts_list: list[Any]) -> None:
     """Recursively extract consecutive Case statements that are made nested
     by the parser and add them to the stmts_list.
     """
@@ -302,12 +279,12 @@ class CParser(Parser):
 
     def _add_declaration_specifier(
         self,
-        declspec: Optional[Dict[str, List[Any]]],
+        declspec: Optional[dict[str, list[Any]]],
         newspec: Any,
         kind: str,
         *,
         append: bool = False,
-    ) -> Dict[str, List[Any]]:
+    ) -> dict[str, list[Any]]:
         """Declaration specifiers are represented by a dictionary with the entries:
         * qual: a list of type qualifiers
         * storage: a list of storage type qualifiers
@@ -370,7 +347,7 @@ class CParser(Parser):
     def _build_declarations(
         self,
         spec: _DeclSpecifierDict,
-        decls: List[_StructDeclaratorDict],
+        decls: list[_StructDeclaratorDict],
         *,
         typedef_namespace: bool = False,
     ) -> Any:
@@ -584,7 +561,7 @@ class CParser(Parser):
         return [p[0]]
 
     @_('";"')
-    def external_declaration(self, p: Any) -> List[Any]:
+    def external_declaration(self, p: Any) -> list[Any]:
         return []
 
     @_("static_assert")
@@ -956,7 +933,7 @@ class CParser(Parser):
         return [p.id_init_declarator, *p.init_declarator]
 
     @_("id_declarator [ EQUALS initializer ]")
-    def id_init_declarator(self, p: Any) -> Dict[str, Any]:
+    def id_init_declarator(self, p: Any) -> dict[str, Any]:
         return {"decl": p.id_declarator, "init": p.initializer}
 
     @_("specifier_qualifier_list type_specifier_no_typeid")
@@ -1711,7 +1688,7 @@ class CParser(Parser):
         )
 
     @_("declaration", "statement")
-    def block_item(self, p: Any) -> List[Any]:
+    def block_item(self, p: Any) -> list[Any]:
         """Handle a block item.
 
         Notes

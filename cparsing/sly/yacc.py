@@ -36,24 +36,11 @@ from __future__ import annotations
 import inspect
 import sys
 from collections import OrderedDict, defaultdict
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Callable,
-    Dict,
-    Generator,
-    Iterable,
-    Iterator,
-    Literal,
-    Sequence,
-    TextIO,
-    TypeVar,
-    cast,
-)
+from collections.abc import Callable, Generator, Iterable, Iterator, Sequence
+from typing import TYPE_CHECKING, Any, Literal, TextIO, cast
 
+from cparsing._typing_compat import CallableT
 from cparsing.sly.lex import Token
-
-CallableT = TypeVar("CallableT", bound=Callable[..., Any])
 
 if TYPE_CHECKING:
     import types
@@ -786,7 +773,7 @@ class Grammar:
     #
     # Compute the value of FIRST1(X) for all symbols
     # -------------------------------------------------------------------------
-    def compute_first(self) -> Dict[str, list[str]]:
+    def compute_first(self) -> dict[str, list[str]]:
         if self.First:
             return self.First
 
@@ -823,7 +810,7 @@ class Grammar:
     # follow set is the set of all symbols that might follow a given
     # non-terminal.  See the Dragon book, 2nd Ed. p. 189.
     # ---------------------------------------------------------------------
-    def compute_follow(self, start: str | None = None) -> Dict[str, list[str]]:
+    def compute_follow(self, start: str | None = None) -> dict[str, list[str]]:
         # If already computed, return the result
         if self.Follow:
             return self.Follow
@@ -1649,7 +1636,7 @@ def _collect_grammar_rules(func: types.FunctionType):
         unwrapped: types.FunctionType = inspect.unwrap(func)
         filename = unwrapped.__code__.co_filename
         lineno = unwrapped.__code__.co_firstlineno
-        func_rules = cast("list[str]", func.rules)
+        func_rules = cast(list[str], func.rules)
         for rule, lineno in zip(func_rules, range(lineno + len(func_rules) - 1, 0, -1)):
             syms = rule.split()
             ebnf_prod = []
@@ -1869,7 +1856,7 @@ def _generate_choice_rules(symbols: Iterable[str]):
     return name, productions
 
 
-class ParserMetaDict(Dict[str, Any]):
+class ParserMetaDict(dict[str, Any]):
     '''
     Dictionary that allows decorated grammar rule functions to be overloaded
     '''
