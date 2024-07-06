@@ -76,15 +76,15 @@ class SlyLogger:
         self.f = f
 
     def debug(self, msg: str, *args: object, **kwargs: object) -> None:
-        self.f.write((msg % args) + '\n')
+        self.f.write((msg % args) + "\n")
 
     info = debug
 
     def warning(self, msg: str, *args: object, **kwargs: object) -> None:
-        self.f.write('WARNING: ' + (msg % args) + '\n')
+        self.f.write("WARNING: " + (msg % args) + "\n")
 
     def error(self, msg: str, *args: object, **kwargs: object) -> None:
-        self.f.write('ERROR: ' + (msg % args) + '\n')
+        self.f.write("ERROR: " + (msg % args) + "\n")
 
     critical = debug
 
@@ -200,7 +200,7 @@ class YaccProduction:
             raise AttributeError(f"No symbol {name}. Must be one of {nameset}.")
 
     def __setattr__(self, name: str, value: object) -> None:
-        if name[:1] == '_':
+        if name[:1] == "_":
             super().__setattr__(name, value)
         else:
             raise AttributeError(f"Can't reassign the value of attribute {name!r}")
@@ -308,7 +308,7 @@ class Production:
         namemap = {}
         for index, key in enumerate(self.prod):
             if namecount[key] > 1:
-                k = f'{key}{nameuse[key]}'
+                k = f"{key}{nameuse[key]}"
                 nameuse[key] += 1
             else:
                 k = key
@@ -316,7 +316,7 @@ class Production:
             if key in _name_aliases:
                 for n, alias in enumerate(_name_aliases[key]):
                     if namecount[alias] > 1:
-                        k = f'{alias}{nameuse[alias]}'
+                        k = f"{alias}{nameuse[alias]}"
                         nameuse[alias] += 1
                     else:
                         k = alias
@@ -337,7 +337,7 @@ class Production:
         if self.prod:
             s = f'{self.name} -> {" ".join(self.prod)}'
         else:
-            s = f'{self.name} -> <empty>'
+            s = f"{self.name} -> <empty>"
 
         if self.prec[1]:
             s += f"  [precedence={self.prec[0]}, level={self.prec[1]}]"
@@ -345,13 +345,13 @@ class Production:
         return s
 
     def __repr__(self) -> str:
-        return f'Production({self})'
+        return f"Production({self})"
 
     def __len__(self) -> int:
         return len(self.prod)
 
     def __nonzero__(self):
-        raise RuntimeError('Used')
+        raise RuntimeError("Used")
         return 1
 
     def __getitem__(self, index: int) -> str:
@@ -423,11 +423,11 @@ class LRItem:
         if self.prod:
             s = f'{self.name} -> {" ".join(self.prod)}'
         else:
-            s = f'{self.name} -> <empty>'
+            s = f"{self.name} -> <empty>"
         return s
 
     def __repr__(self) -> str:
-        return f'LRItem({self})'
+        return f"LRItem({self})"
 
 
 class GrammarError(YaccError):
@@ -511,7 +511,7 @@ class Grammar:
             raise RuntimeError("Must call set_precedence() before add_production()")
         if term in self.Precedence:
             raise GrammarError(f"Precedence already specified for terminal {term!r}")
-        if assoc not in {'left', 'right', 'nonassoc'}:
+        if assoc not in {"left", "right", "nonassoc"}:
             raise GrammarError(f'Associativity of {term!r} must be one of "left","right", or "nonassoc"')
 
         self.Precedence[term] = (assoc, level)
@@ -521,7 +521,7 @@ class Grammar:
         prodname: str,
         syms: list[str],
         func: Optional[Callable[..., Any]] = None,
-        file: str = '',
+        file: str = "",
         line: int = 0,
     ) -> None:
         """Given an action function, this function assembles a production rule and computes its precedence level.
@@ -546,9 +546,9 @@ class Grammar:
         """
 
         if prodname in self.Terminals:
-            raise GrammarError(f'{file}:{line}: Illegal rule name {prodname!r}. Already defined as a token')
-        if prodname == 'error':
-            raise GrammarError(f'{file}:{line}: Illegal rule name {prodname!r}. error is a reserved word')
+            raise GrammarError(f"{file}:{line}: Illegal rule name {prodname!r}. Already defined as a token")
+        if prodname == "error":
+            raise GrammarError(f"{file}:{line}: Illegal rule name {prodname!r}. error is a reserved word")
 
         # Look for literal tokens
         for n, s in enumerate(syms):
@@ -556,7 +556,7 @@ class Grammar:
                 c = s[1:-1]
                 if len(c) != 1:
                     raise GrammarError(
-                        f'{file}:{line}: Literal token {s} in rule {prodname!r} may only be a single character'
+                        f"{file}:{line}: Literal token {s} in rule {prodname!r} may only be a single character"
                     )
                 if c not in self.Terminals:
                     self.Terminals[c] = []
@@ -564,28 +564,28 @@ class Grammar:
                 continue
 
         # Determine the precedence level
-        if '%prec' in syms:
-            if syms[-1] == '%prec':
-                raise GrammarError(f'{file}:{line}: Syntax error. Nothing follows %%prec')
-            if syms[-2] != '%prec':
-                raise GrammarError(f'{file}:{line}: Syntax error. %prec can only appear at the end of a grammar rule')
+        if "%prec" in syms:
+            if syms[-1] == "%prec":
+                raise GrammarError(f"{file}:{line}: Syntax error. Nothing follows %%prec")
+            if syms[-2] != "%prec":
+                raise GrammarError(f"{file}:{line}: Syntax error. %prec can only appear at the end of a grammar rule")
             precname = syms[-1]
             prodprec = self.Precedence.get(precname)
             if not prodprec:
-                raise GrammarError(f'{file}:{line}: Nothing known about the precedence of {precname!r}')
+                raise GrammarError(f"{file}:{line}: Nothing known about the precedence of {precname!r}")
             else:
                 self.UsedPrecedence.add(precname)
             del syms[-2:]  # Drop %prec from the rule
         else:
             # If no %prec, precedence is determined by the rightmost terminal symbol
             precname = next((sym for sym in reversed(syms) if sym in self.Terminals), None)
-            prodprec = ('right', 0) if (precname is None) else self.Precedence.get(precname, ('right', 0))
+            prodprec = ("right", 0) if (precname is None) else self.Precedence.get(precname, ("right", 0))
 
         # See if the rule is already in the rulemap
-        map_ = f'{prodname} -> {syms}'
+        map_ = f"{prodname} -> {syms}"
         if map_ in self.Prodmap:
             m = self.Prodmap[map_]
-            raise GrammarError(f'{file}:{line}: Duplicate rule {m}. Previous definition at {m.file}:{m.line}')
+            raise GrammarError(f"{file}:{line}: Duplicate rule {m}. Previous definition at {m.file}:{m.line}")
 
         # From this point on, everything is valid.  Create a new Production instance
         pnumber = len(self.Productions)
@@ -625,7 +625,7 @@ class Grammar:
             start = self.Productions[1].name
 
         if start not in self.Nonterminals:
-            raise GrammarError(f'start symbol {start} undefined')
+            raise GrammarError(f"start symbol {start} undefined")
         self.Productions[0] = Production(0, "S'", [start])
         self.Nonterminals[start].append(0)
         self.Start = start
@@ -665,7 +665,7 @@ class Grammar:
 
         # Terminals:
         terminates.update({t: True for t in self.Terminals})
-        terminates['$end'] = True
+        terminates["$end"] = True
 
         # Nonterminals:
 
@@ -705,7 +705,7 @@ class Grammar:
         infinite: list[str] = []
         for s, term in terminates.items():
             if not term:
-                if s not in self.Prodnames and s not in self.Terminals and s != 'error':
+                if s not in self.Prodnames and s not in self.Terminals and s != "error":
                     # s is used-but-not-defined, and we've already warned of that,
                     # so it would be overkill to say that it's also non-terminating.
                     pass
@@ -729,7 +729,7 @@ class Grammar:
                 continue
 
             for s in p.prod:
-                if s not in self.Prodnames and s not in self.Terminals and s != 'error':
+                if s not in self.Prodnames and s not in self.Terminals and s != "error":
                     result.append((s, p))
         return result
 
@@ -742,7 +742,7 @@ class Grammar:
             A list of all defined, unused symbols.
         """
 
-        return [s for s, v in self.Terminals.items() if s != 'error' and not v]
+        return [s for s, v in self.Terminals.items() if s != "error" and not v]
 
     def unused_rules(self) -> list[Production]:
         """Find all grammar rules that were defined, but not used (maybe not reachable).
@@ -789,7 +789,7 @@ class Grammar:
 
             # Add all the non-<empty> symbols of First[x] to the result.
             for f in self.First[x]:
-                if f == '<empty>':
+                if f == "<empty>":
                     x_produces_empty = True
                 else:
                     if f not in result:
@@ -805,7 +805,7 @@ class Grammar:
             # There was no 'break' from the loop,
             # so x_produces_empty was true for all x in beta,
             # so beta produces empty as well.
-            result.append('<empty>')
+            result.append("<empty>")
 
         return result
 
@@ -817,7 +817,7 @@ class Grammar:
 
         # Terminals:
         self.First.update({t: [t] for t in self.Terminals})
-        self.First['$end'] = ['$end']
+        self.First["$end"] = ["$end"]
 
         # Nonterminals:
 
@@ -862,7 +862,7 @@ class Grammar:
         if not start:
             start = self.Productions[1].name
 
-        self.Follow[start] = ['$end']
+        self.Follow[start] = ["$end"]
 
         while True:
             didadd = False
@@ -874,10 +874,10 @@ class Grammar:
                         fst = self._first(p.prod[i + 1 :])
                         hasempty = False
                         for f in fst:
-                            if f != '<empty>' and f not in self.Follow[B]:
+                            if f != "<empty>" and f not in self.Follow[B]:
                                 self.Follow[B].append(f)
                                 didadd = True
-                            if f == '<empty>':
+                            if f == "<empty>":
                                 hasempty = True
                         if hasempty or i == (len(p.prod) - 1):
                             # Add elements of follow(a) to follow(b)
@@ -941,25 +941,25 @@ class Grammar:
         """
 
         out: list[str] = []
-        out.append('Grammar:\n')
-        out.extend(f'Rule {n:5d} {p}' for n, p in enumerate(self.Productions))
+        out.append("Grammar:\n")
+        out.extend(f"Rule {n:5d} {p}" for n, p in enumerate(self.Productions))
 
         unused_terminals = self.unused_terminals()
         if unused_terminals:
-            out.append('\nUnused terminals:\n')
-            out.extend(f'    {term}' for term in unused_terminals)
+            out.append("\nUnused terminals:\n")
+            out.extend(f"    {term}" for term in unused_terminals)
 
-        out.append('\nTerminals, with rules where they appear:\n')
+        out.append("\nTerminals, with rules where they appear:\n")
         out.extend(f'{term} : {" ".join(str(s) for s in self.Terminals[term])}' for term in sorted(self.Terminals))
 
-        out.append('\nNonterminals, with rules where they appear:\n')
+        out.append("\nNonterminals, with rules where they appear:\n")
         out.extend(
             f'{nonterm} : {" ".join(str(s) for s in self.Nonterminals[nonterm])}'
             for nonterm in sorted(self.Nonterminals)
         )
 
-        out.append('')
-        return '\n'.join(out)
+        out.append("")
+        return "\n".join(out)
 
 
 # -----------------------------------------------------------------------------
@@ -1104,7 +1104,7 @@ class LRTable:
             didadd = False
             for j in J:
                 for x in j.lr_after:
-                    if getattr(x, 'lr0_added', 0) == self._add_count:
+                    if getattr(x, "lr0_added", 0) == self._add_count:
                         continue
                     # Add B --> .G to J
                     J.append(x.lr_next)
@@ -1143,13 +1143,13 @@ class LRTable:
                     s[id(n)] = s1
                 gs.append(n)
                 s = s1
-        g = s.get('$end')
+        g = s.get("$end")
         if not g:
             if gs:
                 g = self.lr0_closure(gs)
-                s['$end'] = g
+                s["$end"] = g
             else:
-                s['$end'] = gs
+                s["$end"] = gs
         self.lr_goto_cache[(id(I), x)] = g
         return g
 
@@ -1275,7 +1275,7 @@ class LRTable:
 
         # This extra bit is to handle the start state
         if state == 0 and self.grammar.Productions[0].prod[0] == N:
-            terms.append('$end')
+            terms.append("$end")
 
         return terms
 
@@ -1511,20 +1511,20 @@ class LRTable:
             st_actionp: dict[str, LRItem] = {}
             st_goto: dict[str, int] = {}
 
-            descrip.append(f'\nstate {st}\n')
-            descrip.extend(f'    ({p.number}) {p}' for p in I)
+            descrip.append(f"\nstate {st}\n")
+            descrip.extend(f"    ({p.number}) {p}" for p in I)
 
             for p in I:
                 if p.len == p.lr_index + 1:
                     if p.name == "S'":
                         # Start symbol. Accept!
-                        st_action['$end'] = 0
-                        st_actionp['$end'] = p
+                        st_action["$end"] = 0
+                        st_actionp["$end"] = p
                     else:
                         # We are at the end of a production.  Reduce!
                         laheads = p.lookaheads[st]
                         for a in laheads:
-                            actlist.append((a, p, f'reduce using rule {p.number} ({p})'))
+                            actlist.append((a, p, f"reduce using rule {p.number} ({p})"))
                             r = st_action.get(a)
                             if r is not None:
                                 # Have a shift/reduce or reduce/reduce conflict
@@ -1534,26 +1534,26 @@ class LRTable:
                                     # some precedence rules here.
 
                                     # Shift precedence comes from the token
-                                    sprec, slevel = Precedence.get(a, ('right', 0))
+                                    sprec, slevel = Precedence.get(a, ("right", 0))
 
                                     # Reduce precedence comes from rule being reduced (p)
                                     rprec, rlevel = Productions[p.number].prec
 
-                                    if (slevel < rlevel) or ((slevel == rlevel) and (rprec == 'left')):
+                                    if (slevel < rlevel) or ((slevel == rlevel) and (rprec == "left")):
                                         # We really need to reduce here.
                                         st_action[a] = -p.number
                                         st_actionp[a] = p
                                         if not slevel and not rlevel:
-                                            descrip.append(f'  ! shift/reduce conflict for {a} resolved as reduce')
-                                            self.sr_conflicts.append((st, a, 'reduce'))
+                                            descrip.append(f"  ! shift/reduce conflict for {a} resolved as reduce")
+                                            self.sr_conflicts.append((st, a, "reduce"))
                                         Productions[p.number].reduced += 1
-                                    elif (slevel == rlevel) and (rprec == 'nonassoc'):
+                                    elif (slevel == rlevel) and (rprec == "nonassoc"):
                                         st_action[a] = None
                                     else:
                                         # Hmmm. Guess we'll keep the shift
                                         if not rlevel:
-                                            descrip.append(f'  ! shift/reduce conflict for {a} resolved as shift')
-                                            self.sr_conflicts.append((st, a, 'shift'))
+                                            descrip.append(f"  ! shift/reduce conflict for {a} resolved as shift")
+                                            self.sr_conflicts.append((st, a, "shift"))
                                 elif r <= 0:
                                     # Reduce/reduce conflict.   In this case, we favor the rule
                                     # that was defined first in the grammar file
@@ -1569,11 +1569,11 @@ class LRTable:
                                         chosenp, rejectp = oldp, pp
                                     self.rr_conflicts.append((st, chosenp, rejectp))
                                     descrip.append(
-                                        f'  ! reduce/reduce conflict for {a} resolved using '
-                                        f'rule {st_actionp[a].number} ({st_actionp[a]})'
+                                        f"  ! reduce/reduce conflict for {a} resolved using "
+                                        f"rule {st_actionp[a].number} ({st_actionp[a]})"
                                     )
                                 else:
-                                    raise LALRError(f'Unknown conflict in state {st}')
+                                    raise LALRError(f"Unknown conflict in state {st}")
                             else:
                                 st_action[a] = -p.number
                                 st_actionp[a] = p
@@ -1586,38 +1586,38 @@ class LRTable:
                         j = self.lr0_cidhash.get(id(g), -1)
                         if j >= 0:
                             # We are in a shift state
-                            actlist.append((a, p, f'shift and go to state {j}'))
+                            actlist.append((a, p, f"shift and go to state {j}"))
                             r = st_action.get(a)
                             if r is not None:
                                 # Whoa have a shift/reduce or shift/shift conflict
                                 if r > 0:
                                     if r != j:
-                                        raise LALRError(f'Shift/shift conflict in state {st}')
+                                        raise LALRError(f"Shift/shift conflict in state {st}")
                                 elif r <= 0:
                                     # Do a precedence check.
                                     #   -  if precedence of reduce rule is higher, we reduce.
                                     #   -  if precedence of reduce is same and left assoc, we reduce.
                                     #   -  otherwise we shift
                                     rprec, rlevel = Productions[st_actionp[a].number].prec
-                                    sprec, slevel = Precedence.get(a, ('right', 0))
-                                    if (slevel > rlevel) or ((slevel == rlevel) and (rprec == 'right')):
+                                    sprec, slevel = Precedence.get(a, ("right", 0))
+                                    if (slevel > rlevel) or ((slevel == rlevel) and (rprec == "right")):
                                         # We decide to shift here... highest precedence to shift
                                         Productions[st_actionp[a].number].reduced -= 1
                                         st_action[a] = j
                                         st_actionp[a] = p
                                         if not rlevel:
-                                            descrip.append(f'  ! shift/reduce conflict for {a} resolved as shift')
-                                            self.sr_conflicts.append((st, a, 'shift'))
-                                    elif (slevel == rlevel) and (rprec == 'nonassoc'):
+                                            descrip.append(f"  ! shift/reduce conflict for {a} resolved as shift")
+                                            self.sr_conflicts.append((st, a, "shift"))
+                                    elif (slevel == rlevel) and (rprec == "nonassoc"):
                                         st_action[a] = None
                                     else:
                                         # Hmmm. Guess we'll keep the reduce
                                         if not slevel and not rlevel:
-                                            descrip.append(f'  ! shift/reduce conflict for {a} resolved as reduce')
-                                            self.sr_conflicts.append((st, a, 'reduce'))
+                                            descrip.append(f"  ! shift/reduce conflict for {a} resolved as reduce")
+                                            self.sr_conflicts.append((st, a, "reduce"))
 
                                 else:
-                                    raise LALRError(f'Unknown conflict in state {st}')
+                                    raise LALRError(f"Unknown conflict in state {st}")
                             else:
                                 st_action[a] = j
                                 st_actionp[a] = p
@@ -1626,9 +1626,9 @@ class LRTable:
             _actprint = {}
             for a, p, m in actlist:
                 if (a in st_action) and (p is st_actionp[a]):
-                    descrip.append(f'    {a:<15s} {m}')
+                    descrip.append(f"    {a:<15s} {m}")
                     _actprint[(a, m)] = 1
-            descrip.append('')
+            descrip.append("")
 
             # Construct the goto table for this state
             nkeys: dict[str, None] = dict.fromkeys(s for ii in I for s in ii.usyms if s in self.grammar.Nonterminals)
@@ -1638,12 +1638,12 @@ class LRTable:
                 j = self.lr0_cidhash.get(id(g), -1)
                 if j >= 0:
                     st_goto[n] = j
-                    descrip.append(f'    {n:<30s} shift and go to state {j}')
+                    descrip.append(f"    {n:<30s} shift and go to state {j}")
 
             action[st] = st_action
             actionp[st] = st_actionp
             goto[st] = st_goto
-            self.state_descriptions[st] = '\n'.join(descrip)
+            self.state_descriptions[st] = "\n".join(descrip)
 
     def __str__(self) -> str:
         """Return str(self).
@@ -1657,9 +1657,9 @@ class LRTable:
         out = list(self.state_descriptions.values())
 
         if self.sr_conflicts or self.rr_conflicts:
-            out.append('\nConflicts:\n')
+            out.append("\nConflicts:\n")
             out.extend(
-                f'shift/reduce conflict for {tok} in state {state} resolved as {resolution}'
+                f"shift/reduce conflict for {tok} in state {state} resolved as {resolution}"
                 for state, tok, resolution in self.sr_conflicts
             )
 
@@ -1667,17 +1667,17 @@ class LRTable:
             for state, rule, rejected in self.rr_conflicts:
                 if (state, id(rule), id(rejected)) in already_reported:
                     continue
-                out.append(f'reduce/reduce conflict in state {state} resolved using rule {rule}')
-                out.append(f'rejected rule ({rejected}) in state {state}')
+                out.append(f"reduce/reduce conflict in state {state} resolved using rule {rule}")
+                out.append(f"rejected rule ({rejected}) in state {state}")
                 already_reported.add((state, id(rule), id(rejected)))
 
             warned_never: set[Production] = set()
             for _, _, rejected in self.rr_conflicts:
                 if not rejected.reduced and (rejected not in warned_never):
-                    out.append(f'Rule ({rejected}) is never reduced')
+                    out.append(f"Rule ({rejected}) is never reduced")
                     warned_never.add(rejected)
 
-        return '\n'.join(out)
+        return "\n".join(out)
 
 
 def _collect_grammar_rules(func: types.FunctionType):
@@ -1693,28 +1693,28 @@ def _collect_grammar_rules(func: types.FunctionType):
         for rule, lineno in zip(func_rules, range(lineno + len(func_rules) - 1, 0, -1)):
             syms = rule.split()
             ebnf_prod = []
-            while ('{' in syms) or ('[' in syms):
+            while ("{" in syms) or ("[" in syms):
                 for s in syms:
-                    if s == '[':
+                    if s == "[":
                         syms, prod = _replace_ebnf_optional(syms)
                         ebnf_prod.extend(prod)
                         break
-                    elif s == '{':
+                    elif s == "{":
                         syms, prod = _replace_ebnf_repeat(syms)
                         ebnf_prod.extend(prod)
                         break
-                    elif '|' in s:
+                    elif "|" in s:
                         syms, prod = _replace_ebnf_choice(syms)
                         ebnf_prod.extend(prod)
                         break
 
-            if syms[1:2] == [':'] or syms[1:2] == ['::=']:
+            if syms[1:2] == [":"] or syms[1:2] == ["::="]:
                 grammar.append((func, filename, lineno, syms[0], syms[2:]))
             else:
                 grammar.append((func, filename, lineno, prodname, syms))
             grammar.extend(ebnf_prod)
 
-        func = getattr(func, 'next_func', None)
+        func = getattr(func, "next_func", None)
 
     return grammar
 
@@ -1722,12 +1722,12 @@ def _collect_grammar_rules(func: types.FunctionType):
 # Replace EBNF repetition
 def _replace_ebnf_repeat(syms: Iterable[str]):
     syms = list(syms)
-    first = syms.index('{')
-    end = syms.index('}', first)
+    first = syms.index("{")
+    end = syms.index("}", first)
 
     # Look for choices inside
     repeated_syms = syms[first + 1 : end]
-    if any('|' in sym for sym in repeated_syms):
+    if any("|" in sym for sym in repeated_syms):
         repeated_syms, prods = _replace_ebnf_choice(repeated_syms)
     else:
         prods = []
@@ -1739,8 +1739,8 @@ def _replace_ebnf_repeat(syms: Iterable[str]):
 
 def _replace_ebnf_optional(syms: Iterable[str]):
     syms = list(syms)
-    first = syms.index('[')
-    end = syms.index(']', first)
+    first = syms.index("[")
+    end = syms.index("]", first)
     symname, prods = _generate_optional_rules(syms[first + 1 : end])
     syms[first : end + 1] = [symname]
     return syms, prods
@@ -1751,8 +1751,8 @@ def _replace_ebnf_choice(syms: Iterable[str]):
     newprods = []
     n = 0
     while n < len(syms):
-        if '|' in syms[n]:
-            symname, prods = _generate_choice_rules(syms[n].split('|'))
+        if "|" in syms[n]:
+            symname, prods = _generate_choice_rules(syms[n].split("|"))
             syms[n] = symname
             newprods.extend(prods)
         n += 1
@@ -1774,7 +1774,7 @@ def _sanitize_symbols(symbols: Iterable[str]) -> Generator[str]:
         elif sym.isidentifier():
             yield sym
         else:
-            yield sym.encode('utf-8').hex()
+            yield sym.encode("utf-8").hex()
 
 
 def _generate_repeat_rules(symbols: list[str]):
@@ -1802,42 +1802,42 @@ def _generate_repeat_rules(symbols: list[str]):
 
     global _gencount
     _gencount += 1
-    basename = f'_{_gencount}_' + '_'.join(_sanitize_symbols(symbols))
-    name = f'{basename}_repeat'
-    oname = f'{basename}_items'
-    iname = f'{basename}_item'
-    symtext = ' '.join(symbols)
+    basename = f"_{_gencount}_" + "_".join(_sanitize_symbols(symbols))
+    name = f"{basename}_repeat"
+    oname = f"{basename}_items"
+    iname = f"{basename}_item"
+    symtext = " ".join(symbols)
 
     _name_aliases[name] = symbols
 
     productions = []
     _ = _under_decorator
 
-    @_(f'{name} : {oname}')
+    @_(f"{name} : {oname}")
     def repeat(self, p):
         return getattr(p, oname)
 
-    @_(f'{name} : ')
+    @_(f"{name} : ")
     def repeat2(self, p):
         return []
 
     productions.extend(_collect_grammar_rules(repeat))
     productions.extend(_collect_grammar_rules(repeat2))
 
-    @_(f'{oname} : {oname} {iname}')
+    @_(f"{oname} : {oname} {iname}")
     def many(self, p):
         items = getattr(p, oname)
         items.append(getattr(p, iname))
         return items
 
-    @_(f'{oname} : {iname}')
+    @_(f"{oname} : {iname}")
     def many2(self, p):
         return [getattr(p, iname)]
 
     productions.extend(_collect_grammar_rules(many))
     productions.extend(_collect_grammar_rules(many2))
 
-    @_(f'{iname} : {symtext}')
+    @_(f"{iname} : {symtext}")
     def item(self, p):
         return tuple(p)
 
@@ -1861,9 +1861,9 @@ def _generate_optional_rules(symbols: list[str]):
 
     global _gencount
     _gencount += 1
-    basename = f'_{_gencount}_' + '_'.join(_sanitize_symbols(symbols))
-    name = f'{basename}_optional'
-    symtext = ' '.join(symbols)
+    basename = f"_{_gencount}_" + "_".join(_sanitize_symbols(symbols))
+    name = f"{basename}_optional"
+    symtext = " ".join(symbols)
 
     _name_aliases[name] = symbols
 
@@ -1872,11 +1872,11 @@ def _generate_optional_rules(symbols: list[str]):
 
     no_values = (None,) * len(symbols)
 
-    @_(f'{name} : {symtext}')
+    @_(f"{name} : {symtext}")
     def optional(self, p):
         return tuple(p)
 
-    @_(f'{name} : ')
+    @_(f"{name} : ")
     def optional2(self, p):
         return no_values
 
@@ -1898,8 +1898,8 @@ def _generate_choice_rules(symbols: list[str]):
 
     global _gencount
     _gencount += 1
-    basename = f'_{_gencount}_' + '_'.join(_sanitize_symbols(symbols))
-    name = f'{basename}_choice'
+    basename = f"_{_gencount}_" + "_".join(_sanitize_symbols(symbols))
+    name = f"{basename}_choice"
 
     _ = _under_decorator
     productions = []
@@ -1917,14 +1917,14 @@ class ParserMetaDict(dict[str, Any]):
     """Dictionary that allows decorated grammar rule functions to be overloaded."""
 
     def __setitem__(self, key: str, value: Any) -> None:
-        if key in self and callable(value) and hasattr(value, 'rules'):
+        if key in self and callable(value) and hasattr(value, "rules"):
             value.next_func = self[key]
-            if not hasattr(value.next_func, 'rules'):
-                raise GrammarError(f'Redefinition of {key}. Perhaps an earlier {key} is missing @_')
+            if not hasattr(value.next_func, "rules"):
+                raise GrammarError(f"Redefinition of {key}. Perhaps an earlier {key} is missing @_")
         super().__setitem__(key, value)
 
     def __missing__(self, key: str) -> str:
-        if key.isupper() and key[:1] != '_':
+        if key.isupper() and key[:1] != "_":
             return key.upper()
         raise KeyError
 
@@ -1933,7 +1933,7 @@ def _under_decorator(rule: str, *extra: str) -> Callable[[CallableT], CallableT]
     rules = [rule, *extra]
 
     def decorate(func: CallableT) -> CallableT:
-        func.rules = [*getattr(func, 'rules', []), *rules[::-1]]  # type: ignore # Runtime attribute assignment.
+        func.rules = [*getattr(func, "rules", []), *rules[::-1]]  # type: ignore # Runtime attribute assignment.
         return func
 
     return decorate
@@ -1943,11 +1943,11 @@ class ParserMeta(type):
     @classmethod
     def __prepare__(cls, clsname: str, bases: tuple[type, ...], **kwds: object) -> ParserMetaDict:
         namespace = ParserMetaDict()
-        namespace['_'] = _under_decorator
+        namespace["_"] = _under_decorator
         return namespace
 
     def __new__(cls, clsname: str, bases: tuple[type, ...], namespace: ParserMetaDict, **kwds: object):
-        del namespace['_']
+        del namespace["_"]
         self: type[Parser] = super().__new__(cls, clsname, bases, namespace, **kwds)
         self._build(list(namespace.items()))
         return self
@@ -1965,15 +1965,15 @@ class Parser(metaclass=ParserMeta):
 
     @classmethod
     def __validate_tokens(cls) -> bool:
-        if not hasattr(cls, 'tokens'):
-            cls.log.error('No token list is defined')
+        if not hasattr(cls, "tokens"):
+            cls.log.error("No token list is defined")
             return False
 
         if not cls.tokens:
-            cls.log.error('tokens is empty')
+            cls.log.error("tokens is empty")
             return False
 
-        if 'error' in cls.tokens:
+        if "error" in cls.tokens:
             cls.log.error("Illegal token name 'error'. Is a reserved word")
             return False
 
@@ -1981,26 +1981,26 @@ class Parser(metaclass=ParserMeta):
 
     @classmethod
     def __validate_precedence(cls) -> bool:
-        if not hasattr(cls, 'precedence'):
+        if not hasattr(cls, "precedence"):
             cls.__preclist = []
             return True
 
         preclist = []
         if not isinstance(cls.precedence, (list, tuple)):
-            cls.log.error('precedence must be a list or tuple')
+            cls.log.error("precedence must be a list or tuple")
             return False
 
         for level, p in enumerate(cls.precedence, start=1):
             if not isinstance(p, (list, tuple)):
-                cls.log.error('Bad precedence table entry %r. Must be a list or tuple', p)
+                cls.log.error("Bad precedence table entry %r. Must be a list or tuple", p)
                 return False
 
             if len(p) < 2:
-                cls.log.error('Malformed precedence entry %r. Must be (assoc, term, ..., term)', p)
+                cls.log.error("Malformed precedence entry %r. Must be (assoc, term, ..., term)", p)
                 return False
 
             if not all(isinstance(term, str) for term in p):
-                cls.log.error('precedence items must be strings')
+                cls.log.error("precedence items must be strings")
                 return False
 
             assoc = p[0]
@@ -2011,23 +2011,23 @@ class Parser(metaclass=ParserMeta):
 
     @classmethod
     def __validate_specification(cls) -> bool:
-        '''
+        """
         Validate various parts of the grammar specification
-        '''
+        """
         if not cls.__validate_tokens():
             return False
         return cls.__validate_precedence()
 
     @classmethod
     def __build_grammar(cls, rules) -> None:
-        '''
+        """
         Build the grammar from the grammar rules
-        '''
+        """
         grammar_rules = []
-        errors = ''
+        errors = ""
         # Check for non-empty symbols
         if not rules:
-            raise YaccError('No grammar rules are defined')
+            raise YaccError("No grammar rules are defined")
 
         grammar = Grammar(cls.tokens)
 
@@ -2036,7 +2036,7 @@ class Parser(metaclass=ParserMeta):
             try:
                 grammar.set_precedence(term, assoc, level)
             except GrammarError as e:
-                errors += f'{e}\n'
+                errors += f"{e}\n"
 
         for name, func in rules:
             try:
@@ -2045,96 +2045,96 @@ class Parser(metaclass=ParserMeta):
                     try:
                         grammar.add_production(prodname, syms, pfunc, rulefile, ruleline)
                     except GrammarError as e:
-                        errors += f'{e}\n'
+                        errors += f"{e}\n"
             except SyntaxError as e:
-                errors += f'{e}\n'
+                errors += f"{e}\n"
         try:
-            grammar.set_start(getattr(cls, 'start', None))
+            grammar.set_start(getattr(cls, "start", None))
         except GrammarError as e:
-            errors += f'{e}\n'
+            errors += f"{e}\n"
 
         undefined_symbols = grammar.undefined_symbols()
         for sym, prod in undefined_symbols:
-            errors += f'{prod.file}:{prod.line}: Symbol {sym!r} used, but not defined as a token or a rule\n'
+            errors += f"{prod.file}:{prod.line}: Symbol {sym!r} used, but not defined as a token or a rule\n"
 
         unused_terminals = grammar.unused_terminals()
         if unused_terminals:
-            unused_str = '{' + ','.join(unused_terminals) + '}'
-            cls.log.warning('Token%s %s defined, but not used', "(s)" if len(unused_terminals) > 1 else "", unused_str)
+            unused_str = "{" + ",".join(unused_terminals) + "}"
+            cls.log.warning("Token%s %s defined, but not used", "(s)" if len(unused_terminals) > 1 else "", unused_str)
 
         unused_rules = grammar.unused_rules()
         for prod in unused_rules:
-            cls.log.warning('%s:%d: Rule %r defined, but not used', prod.file, prod.line, prod.name)
+            cls.log.warning("%s:%d: Rule %r defined, but not used", prod.file, prod.line, prod.name)
 
         if len(unused_terminals) == 1:
-            cls.log.warning('There is 1 unused token')
+            cls.log.warning("There is 1 unused token")
         if len(unused_terminals) > 1:
-            cls.log.warning('There are %d unused tokens', len(unused_terminals))
+            cls.log.warning("There are %d unused tokens", len(unused_terminals))
 
         if len(unused_rules) == 1:
-            cls.log.warning('There is 1 unused rule')
+            cls.log.warning("There is 1 unused rule")
         if len(unused_rules) > 1:
-            cls.log.warning('There are %d unused rules', len(unused_rules))
+            cls.log.warning("There are %d unused rules", len(unused_rules))
 
         unreachable = grammar.find_unreachable()
         for u in unreachable:
-            cls.log.warning('Symbol %r is unreachable', u)
+            cls.log.warning("Symbol %r is unreachable", u)
 
         if len(undefined_symbols) == 0:
             infinite = grammar.infinite_cycles()
             for inf in infinite:
-                errors += f'Infinite recursion detected for symbol {inf!r}\n'
+                errors += f"Infinite recursion detected for symbol {inf!r}\n"
 
         unused_prec = grammar.unused_precedence()
         for term, assoc in unused_prec:
-            errors += f'Precedence rule {assoc!r} defined for unknown symbol {term!r}\n'
+            errors += f"Precedence rule {assoc!r} defined for unknown symbol {term!r}\n"
 
         cls._grammar = grammar
         if errors:
-            raise YaccError('Unable to build grammar.\n' + errors)
+            raise YaccError("Unable to build grammar.\n" + errors)
 
     @classmethod
     def __build_lrtables(cls) -> Literal[True]:
-        '''
+        """
         Build the LR Parsing tables from the grammar
-        '''
+        """
         lrtable = LRTable(cls._grammar)
         num_sr = len(lrtable.sr_conflicts)
 
         # Report shift/reduce and reduce/reduce conflicts
-        if num_sr != getattr(cls, 'expected_shift_reduce', None):
+        if num_sr != getattr(cls, "expected_shift_reduce", None):
             if num_sr == 1:
-                cls.log.warning('1 shift/reduce conflict')
+                cls.log.warning("1 shift/reduce conflict")
             elif num_sr > 1:
-                cls.log.warning('%d shift/reduce conflicts', num_sr)
+                cls.log.warning("%d shift/reduce conflicts", num_sr)
 
         num_rr = len(lrtable.rr_conflicts)
-        if num_rr != getattr(cls, 'expected_reduce_reduce', None):
+        if num_rr != getattr(cls, "expected_reduce_reduce", None):
             if num_rr == 1:
-                cls.log.warning('1 reduce/reduce conflict')
+                cls.log.warning("1 reduce/reduce conflict")
             elif num_rr > 1:
-                cls.log.warning('%d reduce/reduce conflicts', num_rr)
+                cls.log.warning("%d reduce/reduce conflicts", num_rr)
 
         cls._lrtable = lrtable
         return True
 
     @classmethod
     def __collect_rules(cls, definitions):
-        '''
+        """
         Collect all of the tagged grammar rules
-        '''
-        rules = [(name, value) for name, value in definitions if callable(value) and hasattr(value, 'rules')]
+        """
+        rules = [(name, value) for name, value in definitions if callable(value) and hasattr(value, "rules")]
         return rules
 
     @classmethod
-    def _build(cls, definitions) -> None:
+    def _build(cls, definitions: list[tuple[str, Any]]) -> None:
         """Build the LALR(1) tables. `definitions` is a list of (name, item) tuples of all definitions provided in the
         class, listed in the order in which they were defined.
 
         This method is triggered by a metaclass.
         """
 
-        if vars(cls).get('_build', False):
+        if vars(cls).get("_build", False):
             return
 
         # Collect all of the grammar rules from the class definition
@@ -2142,60 +2142,56 @@ class Parser(metaclass=ParserMeta):
 
         # Validate other parts of the grammar specification
         if not cls.__validate_specification():
-            raise YaccError('Invalid parser specification')
+            raise YaccError("Invalid parser specification")
 
         # Build the underlying grammar object
         cls.__build_grammar(rules)
 
         # Build the LR tables
         if not cls.__build_lrtables():
-            raise YaccError('Can\'t build parsing tables')
+            raise YaccError("Can't build parsing tables")
 
         if cls.debugfile:
-            with open(cls.debugfile, 'w') as f:
+            with open(cls.debugfile, "w") as f:
                 f.write(str(cls._grammar))
-                f.write('\n')
+                f.write("\n")
                 f.write(str(cls._lrtable))
-            cls.log.info('Parser debugging for %s written to %s', cls.__qualname__, cls.debugfile)
+            cls.log.info("Parser debugging for %s written to %s", cls.__qualname__, cls.debugfile)
 
     # ----------------------------------------------------------------------
     # Parsing Support.  This is the parsing runtime that users use to
     # ----------------------------------------------------------------------
     def error(self, token) -> None:
-        '''
-        Default error handling function.  This may be subclassed.
-        '''
+        """Default error handling function. This may be subclassed."""
+
         if token:
-            lineno = getattr(token, 'lineno', 0)
+            lineno = getattr(token, "lineno", 0)
             if lineno:
-                sys.stderr.write(f'sly: Syntax error at line {lineno}, token={token.type}\n')
+                sys.stderr.write(f"sly: Syntax error at line {lineno}, token={token.type}\n")
             else:
-                sys.stderr.write(f'sly: Syntax error, token={token.type}')
+                sys.stderr.write(f"sly: Syntax error, token={token.type}")
         else:
-            sys.stderr.write('sly: Parse error in input. EOF\n')
+            sys.stderr.write("sly: Parse error in input. EOF\n")
 
     def errok(self) -> None:
-        '''
-        Clear the error status
-        '''
+        """Clear the error status."""
+
         self.errorok = True
 
     def restart(self) -> None:
-        '''
-        Force the parser to restart from a fresh state. Clears the statestack
-        '''
+        """Force the parser to restart from a fresh state. Clears the statestack."""
+
         del self.statestack[:]
         del self.symstack[:]
         sym = YaccSymbol()
-        sym.type = '$end'
+        sym.type = "$end"
         self.symstack.append(sym)
         self.statestack.append(0)
         self.state = 0
 
     def parse(self, tokens: Iterator[Token]) -> Any:
-        '''
-        Parse the given input tokens.
-        '''
+        """Parse the given input tokens."""
+
         self.lookahead: Any = None  # Current lookahead symbol
         lookaheadstack: list[Any] = []  # Stack of lookahead symbols
         actions = self._lrtable.lr_action  # Local reference to action table (to avoid lookup on self.)
@@ -2217,7 +2213,7 @@ class Parser(metaclass=ParserMeta):
 
         # Set up position tracking
         track_positions = self.track_positions
-        if not hasattr(self, '_line_positions'):
+        if not hasattr(self, "_line_positions"):
             self._line_positions: dict[int, int] = {}  # id: -> lineno
             self._index_positions: dict[int, tuple[int, int]] = {}  # id: -> (start, end)
 
@@ -2234,7 +2230,7 @@ class Parser(metaclass=ParserMeta):
                         self.lookahead = lookaheadstack.pop()
                     if not self.lookahead:
                         self.lookahead = YaccSymbol()
-                        self.lookahead.type = '$end'
+                        self.lookahead.type = "$end"
 
                 # Check the action table
                 ltype = self.lookahead.type
@@ -2302,7 +2298,7 @@ class Parser(metaclass=ParserMeta):
 
                 if t == 0:
                     n = symstack[-1]
-                    result = getattr(n, 'value', None)
+                    result = getattr(n, "value", None)
                     return result
 
             if t is None:
@@ -2319,7 +2315,7 @@ class Parser(metaclass=ParserMeta):
                 if errorcount == 0 or self.errorok:
                     errorcount = ERROR_COUNT
                     self.errorok = False
-                    if self.lookahead.type == '$end':
+                    if self.lookahead.type == "$end":
                         errtoken = None  # End of file!
                     else:
                         errtoken = self.lookahead
@@ -2344,7 +2340,7 @@ class Parser(metaclass=ParserMeta):
                 # entire parse has been rolled back and we're completely hosed.   The token is
                 # discarded and we just keep going.
 
-                if len(statestack) <= 1 and self.lookahead.type != '$end':
+                if len(statestack) <= 1 and self.lookahead.type != "$end":
                     self.lookahead = None
                     self.state = 0
                     # Nuke the lookahead stack
@@ -2355,13 +2351,13 @@ class Parser(metaclass=ParserMeta):
                 # at the end of the file. nuke the top entry and generate an error token
 
                 # Start nuking entries on the stack
-                if self.lookahead.type == '$end':
+                if self.lookahead.type == "$end":
                     # Whoa. We're really hosed here. Bail out
                     return None
 
-                if self.lookahead.type != 'error':
+                if self.lookahead.type != "error":
                     sym = symstack[-1]
-                    if sym.type == 'error':
+                    if sym.type == "error":
                         # Hmmm. Error is on top of stack, we'll just nuke input
                         # symbol and continue
                         self.lookahead = None
@@ -2369,13 +2365,13 @@ class Parser(metaclass=ParserMeta):
 
                     # Create the error symbol for the first time and make it the new lookahead symbol
                     t = YaccSymbol()
-                    t.type = 'error'
+                    t.type = "error"
 
-                    if hasattr(self.lookahead, 'lineno'):
+                    if hasattr(self.lookahead, "lineno"):
                         t.lineno = self.lookahead.lineno
-                    if hasattr(self.lookahead, 'index'):
+                    if hasattr(self.lookahead, "index"):
                         t.index = self.lookahead.index
-                    if hasattr(self.lookahead, 'end'):
+                    if hasattr(self.lookahead, "end"):
                         t.end = self.lookahead.end
                     t.value = self.lookahead
                     lookaheadstack.append(self.lookahead)
@@ -2387,7 +2383,7 @@ class Parser(metaclass=ParserMeta):
                 continue
 
             # Call an error function here
-            raise RuntimeError('sly: internal parser error!!!\n')
+            raise RuntimeError("sly: internal parser error!!!\n")
 
     # Return position tracking information
     def line_position(self, value: Any) -> int:
