@@ -7,26 +7,20 @@ from cparsing.sly import Lexer
 from cparsing.sly.lex import Token
 
 if TYPE_CHECKING:
-    # Typing hack.
+    # Typing hack. This import doesn't work at runtime. See _typing_compat for more details.
     from cparsing._typing_compat import _
 
 
 __all__ = ("CLexError", "CLexer")
 
 
-class CLexError(Exception):
-    """Exception raised when the CLexer can't handle an invalid token."""
-
-    def __init__(self, message: str, text: str, error_coords: tuple[int, int]):
-        super().__init__(message)
-        self.text = text
-        self.error_coords = error_coords
+# ============================================================================
+# region -------- Token regex helpers
+# ============================================================================
 
 
 _line_pattern = re.compile(r"([ \t]*line\W)|([ \t]*\d+)")
 _pragma_pattern = re.compile(r"[ \t]*pragma\W")
-
-# ==== Regexes for use in tokens
 
 _hex_prefix = "0[xX]"
 _hex_digits = "[0-9a-fA-F]+"
@@ -83,6 +77,9 @@ _binary_exponent_part = r"""([pP][+-]?[0-9]+)"""
 _hex_fractional_constant = "(((" + _hex_digits + r""")?\.""" + _hex_digits + ")|(" + _hex_digits + r"""\.))"""
 
 
+# endregion
+
+
 def _find_token_column(text: str, t: Token) -> int:
     last_cr = text.rfind("\n", 0, t.index)
     # if last_cr < 0:
@@ -91,8 +88,22 @@ def _find_token_column(text: str, t: Token) -> int:
     return t.index - last_cr
 
 
+class CLexError(Exception):
+    """Exception raised when the CLexer can't handle an invalid token."""
+
+    def __init__(self, message: str, text: str, error_coords: tuple[int, int]):
+        super().__init__(message)
+        self.text = text
+        self.error_coords = error_coords
+
+
+# ============================================================================
+# region -------- Lexers
+# ============================================================================
+
+
 class CLexer(Lexer):
-    # ==== Reserved keywords
+    # ---- Reserved keywords
     # fmt: off
     keywords: set[str] = {
         AUTO, BREAK, CASE, CHAR, CONST, CONTINUE, DEFAULT, DO, DOUBLE, ELSE, ENUM,
@@ -155,12 +166,12 @@ class CLexer(Lexer):
     }
     # fmt: on
 
-    # Delimiters (regular and for scope).
+    # ---- Delimiters (regular and for scope).
     literals = {",", ".", ";", ":", "(", ")", "[", "]", "{", "}"}
 
     ignore = " \t"
 
-    # ==== The rest of the tokens
+    # ---- The rest of the tokens
 
     @_(r"[ \t]*\#")
     def PP_HASH(self, t: Token) -> Optional[Token]:
@@ -368,6 +379,8 @@ class CLexer(Lexer):
 
 
 class PreprocessorLineLexer(Lexer):
+    """Lexer state that handles C's #line preprocessor directive."""
+
     tokens = {FILENAME, LINE_NUMBER, PP_LINE}
 
     ignore = " \t"
@@ -416,6 +429,8 @@ class PreprocessorLineLexer(Lexer):
 
 
 class PreprocessorPragmaLexer(Lexer):
+    """Lexer state that handles C's #pragma preprocessor directive."""
+
     tokens = {PP_PRAGMA, STR}
 
     ignore = " \t"
@@ -436,3 +451,6 @@ class PreprocessorPragmaLexer(Lexer):
         column = _find_token_column(self.text, t)
         msg = msg or f"invalid #pragma directive {t.value}"
         raise CLexError(msg, t.value, (self.lineno, column))
+
+
+# endregion

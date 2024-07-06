@@ -54,7 +54,7 @@ else:
     class TypeGuard(metaclass=_PlaceholderMeta):
         pass
 
-    class TypeAlias:
+    class TypeAlias(metaclass=_PlaceholderMeta):
         pass
 
 
@@ -67,6 +67,6 @@ if TYPE_CHECKING:
     class _RuleDecorator(Protocol):
         def __call__(self, rule: str, *extras: str) -> Callable[[CallableT], CallableT]: ...
 
-    _ = cast(_RuleDecorator, object())
     # Typing hack to account for `_` existing in a sly.Lexer or sly.Parser class's namespace only during class creation.
     # Should only ever be imported within an `if TYPE_CHECKING` block.
+    _ = cast(_RuleDecorator, object())

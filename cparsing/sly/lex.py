@@ -39,52 +39,63 @@ from cparsing._typing_compat import CallableT, Self
 
 _MISSING: Any = object()
 
-__all__ = ('Lexer', 'LexerStateChange')
+__all__ = ("Lexer", "LexerStateChange")
+
+
+# ============================================================================
+# region -------- Exceptions
+# ============================================================================
 
 
 class LexError(Exception):
-    '''
-    Exception raised if an invalid character is encountered and no default
-    error handler function is defined.  The .text attribute of the exception
-    contains all remaining untokenized text. The .error_index is the index
-    location of the error.
-    '''
+    """Exception raised if an invalid character is encountered and no default error handler function is defined.
 
-    def __init__(self, message: str, text: str, error_index: int):
-        self.args = (message,)
+    Parameters
+    ----------
+    message: str
+        The message to put in the exception.
+    text: str
+        All remaining untokenized text.
+    error_index: int
+        The index location of the error.
+
+    Attributes
+    ----------
+    text: str
+        All remaining untokenized text.
+    error_index: int
+        The index location of the error.
+    """
+
+    def __init__(self, message: str, text: str, error_index: int) -> None:
+        super().__init__(message)
         self.text = text
         self.error_index = error_index
 
 
 class PatternError(Exception):
-    '''
-    Exception raised if there's some kind of problem with the specified
-    regex patterns in the lexer.
-    '''
+    """Exception raised if there's some kind of problem with the specified regex patterns in the lexer."""
 
 
 class LexerBuildError(Exception):
-    '''
-    Exception raised if there's some sort of problem building the lexer.
-    '''
+    """Exception raised if there's some sort of problem building the lexer."""
 
 
 class LexerStateChange(Exception):
-    '''
-    Exception raised to force a lexing state change
-    '''
+    """Exception raised to force a lexing state change."""
 
     def __init__(self, newstate: type["Lexer"], tok: Optional["Token"] = None):
         self.newstate = newstate
         self.tok = tok
 
 
-class Token:
-    '''
-    Representation of a single token.
-    '''
+# endregion
 
-    __slots__ = ('type', 'value', 'lineno', 'index', 'end')
+
+class Token:
+    """Representation of a single token."""
+
+    __slots__ = ("type", "value", "lineno", "index", "end")
 
     if TYPE_CHECKING:
         type: str
@@ -93,48 +104,47 @@ class Token:
         index: int
         end: int
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return (
-            f'Token(type={self.type!r}, value={self.value!r}, lineno={self.lineno}, index={self.index}, end={self.end})'
+            f"Token(type={self.type!r}, value={self.value!r}, lineno={self.lineno}, index={self.index}, "
+            f'end={getattr(self, "end", -1)})'
         )
 
 
 class TokenStr(str):
-    def __new__(cls, value: object, key: str, remap: Optional[dict[tuple[str, Any], Any]] = None):
+    def __new__(cls, value: object, key: str, remap: Optional[dict[tuple[str, Any], Any]] = None) -> Self:
         return super().__new__(cls, value)
 
-    def __init__(self, value: object, key: str, remap: Optional[dict[tuple[str, Any], Any]] = None):
+    def __init__(self, value: object, key: str, remap: Optional[dict[tuple[str, Any], Any]] = None) -> None:
         self.key = key
         self.remap = remap
 
-    # Implementation of TOKEN[value] = NEWTOKEN
-    def __setitem__(self, key: str, value: str):
+    def __setitem__(self, key: str, value: str) -> None:
+        # Implementation of TOKEN[value] = NEWTOKEN
         if self.remap is not None:
             self.remap[self.key, key] = value
 
-    # Implementation of del TOKEN[value]
-    def __delitem__(self, key: str):
+    def __delitem__(self, key: str) -> None:
+        # Implementation of del TOKEN[value]
         if self.remap is not None:
             self.remap[self.key, key] = self.key
 
 
 class _Before:
-    def __init__(self, tok: str, pattern: str):
+    def __init__(self, tok: str, pattern: str) -> None:
         self.tok = tok
         self.pattern = pattern
 
 
 class LexerMetaDict(dict[str, Any]):
-    '''
-    Special dictionary that prohibits duplicate definitions in lexer specifications.
-    '''
+    """Special dictionary that prohibits duplicate definitions in lexer specifications."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.before: dict[str, Any] = {}
         self.delete: list[str] = []
         self.remap: dict[tuple[str, Any], Any] = {}
 
-    def __setitem__(self, key: str, value: Any):
+    def __setitem__(self, key: str, value: Any) -> None:
         if isinstance(value, str):
             value = TokenStr(value, key, self.remap)
 
@@ -148,11 +158,11 @@ class LexerMetaDict(dict[str, Any]):
                 if callable(value):
                     value.pattern = prior
                 else:
-                    raise AttributeError(f'Name {key} redefined')  # noqa: TRY004
+                    raise AttributeError(f"Name {key} redefined")  # noqa: TRY004
 
         super().__setitem__(key, value)
 
-    def __delitem__(self, key: str):
+    def __delitem__(self, key: str) -> None:
         self.delete.append(key)
         if key not in self and key.isupper():
             return None
@@ -160,62 +170,66 @@ class LexerMetaDict(dict[str, Any]):
         return super().__delitem__(key)
 
     def __missing__(self, key: str) -> TokenStr:
-        if key.split('ignore_')[-1].isupper() and key[:1] != '_':
+        if key.split("ignore_")[-1].isupper() and key[:1] != "_":
             return TokenStr(key, key, self.remap)
         raise KeyError
 
 
+def _under_decorator(pattern: str, *extra: str) -> Callable[[CallableT], CallableT]:
+    patterns = [pattern, *extra]
+
+    def decorate(func: CallableT) -> CallableT:
+        pattern = "|".join(f"({pat})" for pat in patterns)
+        if hasattr(func, "pattern"):
+            func.pattern = f"{pattern}|{func.pattern}"  # type: ignore # Runtime attribute access and assignment.
+        else:
+            func.pattern = pattern  # type: ignore # Runtime attribute assignment.
+        return func
+
+    return decorate
+
+
 class LexerMeta(type):
-    '''
-    Metaclass for collecting lexing rules
-    '''
+    """Metaclass for collecting lexing rules."""
 
     if TYPE_CHECKING:
         _rules: list[tuple[str, Any]]
+        _attributes: dict[str, Any]
+        _before: dict[str, str]
 
     @classmethod
     def __prepare__(cls, name: str, bases: tuple[type, ...], **kwds: object) -> LexerMetaDict:
-        d = LexerMetaDict()
+        namespace = LexerMetaDict()
+        namespace["_"] = _under_decorator
+        namespace["before"] = _Before
+        return namespace
 
-        def _(pattern: str, *extra: str) -> Callable[[CallableT], CallableT]:
-            patterns = [pattern, *extra]
-
-            def decorate(func: CallableT) -> CallableT:
-                pattern = '|'.join(f'({pat})' for pat in patterns)
-                if hasattr(func, 'pattern'):
-                    func.pattern = f'{pattern}|{func.pattern}'  # type: ignore # Runtime attribute access and assignment.
-                else:
-                    func.pattern = pattern  # type: ignore # Runtime attribute assignment.
-                return func
-
-            return decorate
-
-        d['_'] = _
-        d['before'] = _Before
-        return d
-
-    def __new__(cls, clsname: str, bases: tuple[type, ...], attributes: LexerMetaDict, **kwds: object):
-        del attributes['_']
-        del attributes['before']
+    def __new__(cls, clsname: str, bases: tuple[type, ...], namespace: LexerMetaDict, **kwds: object):
+        del namespace["_"]
+        del namespace["before"]
 
         # Create attributes for use in the actual class body
-        cls_attributes = {str(key): str(val) if isinstance(val, TokenStr) else val for key, val in attributes.items()}
-        self: type[Lexer] = super().__new__(cls, clsname, bases, cls_attributes, **kwds)
+        real_namespace = {str(key): str(val) if isinstance(val, TokenStr) else val for key, val in namespace.items()}
+        return super().__new__(cls, clsname, bases, real_namespace, **kwds)
+
+    def __init__(self, clsname: str, bases: tuple[type, ...], namespace: LexerMetaDict, **kwds: object) -> None:
+        super().__init__(clsname, bases, namespace, **kwds)
 
         # Attach various metadata to the class
-        self._attributes = dict(attributes)
-        self._remap = attributes.remap
-        self._before = attributes.before
-        self._delete = attributes.delete
-        self._build()
-        return self
+        self._attributes = dict(namespace)
+        self._remap = namespace.remap
+        self._before = namespace.before
+        self._delete = namespace.delete
+
+        # NOTE: Calling _build() is what creates the _rules attribute on the class.
+        self._build()  # pyright: ignore # This method should always exist in Lexer subclasses.
 
 
 class Lexer(metaclass=LexerMeta):
     # These attributes may be redefined in subclasses.
     tokens: ClassVar[set[str]] = set()
     literals: ClassVar[set[str]] = set()
-    ignore: str = ''
+    ignore: str = ""
     reflags: int = 0
     regex_module = re
 
@@ -230,26 +244,26 @@ class Lexer(metaclass=LexerMeta):
     __state_stack: Optional[list[type["Lexer"]]] = None
     __set_state: Optional[Callable[[type["Lexer"]], None]] = None
 
-    if TYPE_CHECKING:
-        _attributes: ClassVar[dict[str, Any]]
-        _before: ClassVar[dict[str, str]]
-
     @classmethod
     def _collect_rules(cls) -> None:
-        # Collect all of the rules from class definitions that look like token
-        # information.   There are a few things that govern this:
-        #
-        # 1.  Any definition of the form NAME = str is a token if NAME is
-        #     is defined in the tokens set.
-        #
-        # 2.  Any definition of the form ignore_NAME = str is a rule for an ignored
-        #     token.
-        #
-        # 3.  Any function defined with a 'pattern' attribute is treated as a rule.
-        #     Such functions can be created with the @_ decorator or by defining
-        #     function with the same name as a previously defined string.
-        #
-        # This function is responsible for keeping rules in order.
+        """Collect all of the rules from class definitions that look like token information.
+
+        Notes
+        -----
+        There are a few things that govern this:
+
+        1.  Any definition of the form `NAME = str` is a token if `NAME` is
+            is defined in the tokens set.
+
+        2.  Any definition of the form `ignore_NAME = str` is a rule for an ignored
+            token.
+
+        3.  Any function defined with a `.pattern` attribute is treated as a rule.
+            Such functions can be created with the `@_` decorator or by defining
+            function with the same name as a previously defined string.
+
+        This function is responsible for keeping rules in order.
+        """
 
         # Collect all previous rules from base classes
         rules: list[tuple[str, Any]] = []
@@ -262,13 +276,13 @@ class Lexer(metaclass=LexerMeta):
         existing = dict(rules)
 
         for key, value in cls._attributes.items():
-            if (key in cls._token_names) or key.startswith('ignore_') or hasattr(value, 'pattern'):
-                if callable(value) and not hasattr(value, 'pattern'):
+            if (key in cls._token_names) or key.startswith("ignore_") or hasattr(value, "pattern"):
+                if callable(value) and not hasattr(value, "pattern"):
                     raise LexerBuildError(f"function {value} doesn't have a regex pattern")
 
                 if key in existing:
                     # The definition matches something that already existed in the base class.
-                    # We replace it, but keep the original ordering
+                    # We replace it, but keep the original ordering.
                     n = rules.index((key, existing[key]))
                     rules[n] = (key, value)
                     existing[key] = value
@@ -276,7 +290,7 @@ class Lexer(metaclass=LexerMeta):
                 elif isinstance(value, TokenStr) and key in cls._before:
                     before = cls._before[key]
                     if before in existing:
-                        # Position the token before another specified token
+                        # Position the token before another specified token.
                         n = rules.index((before, existing[before]))
                         rules.insert(n, (key, value))
                     else:
@@ -287,22 +301,19 @@ class Lexer(metaclass=LexerMeta):
                     rules.append((key, value))
                     existing[key] = value
 
-            elif isinstance(value, str) and not key.startswith('_') and key not in {'ignore', 'literals'}:
-                raise LexerBuildError(f'{key} does not match a name in tokens')
+            elif isinstance(value, str) and not key.startswith("_") and key not in {"ignore", "literals"}:
+                raise LexerBuildError(f"{key} does not match a name in tokens")
 
-        # Apply deletion rules
+        # Apply deletion rules.
         rules = [(key, value) for key, value in rules if key not in cls._delete]
         cls._rules = rules
 
     @classmethod
     def _build(cls) -> None:
-        '''
-        Build the lexer object from the collected tokens and regular expressions.
-        Validate the rules to make sure they look sane.
-        '''
+        """Build the lexer object from the collected tokens and regular expressions, and validate them as sane."""
 
-        if 'tokens' not in vars(cls):
-            raise LexerBuildError(f'{cls.__qualname__} class does not define a tokens attribute')
+        if "tokens" not in vars(cls):
+            raise LexerBuildError(f"{cls.__qualname__} class does not define a tokens attribute")
 
         # Pull definitions created for any parent classes
         cls._token_names = cls._token_names | set(cls.tokens)
@@ -321,14 +332,14 @@ class Lexer(metaclass=LexerMeta):
 
         undefined = remapped_toks - set(cls._token_names)
         if undefined:
-            missing = ', '.join(undefined)
-            raise LexerBuildError(f'{missing} not included in token(s)')
+            missing = ", ".join(undefined)
+            raise LexerBuildError(f"{missing} not included in token(s)")
 
         cls._collect_rules()
 
         parts: list[str] = []
         for tokname, value in cls._rules:
-            if tokname.startswith('ignore_'):
+            if tokname.startswith("ignore_"):
                 tokname = tokname[7:]  # noqa: PLW2901
                 cls._ignored_tokens.add(tokname)
 
@@ -340,17 +351,17 @@ class Lexer(metaclass=LexerMeta):
                 pattern = value.pattern
 
             # Form the regular expression component
-            part = f'(?P<{tokname}>{pattern})'
+            part = f"(?P<{tokname}>{pattern})"
 
             # Make sure the individual regex compiles properly
             try:
                 cpat = cls.regex_module.compile(part, cls.reflags)
             except Exception as e:
-                raise PatternError(f'Invalid regex for token {tokname}') from e
+                raise PatternError(f"Invalid regex for token {tokname}") from e
 
             # Verify that the pattern doesn't match the empty string
-            if cpat.match(''):
-                raise PatternError(f'Regex for token {tokname} matches empty input')
+            if cpat.match(""):
+                raise PatternError(f"Regex for token {tokname} matches empty input")
 
             parts.append(part)
 
@@ -358,33 +369,29 @@ class Lexer(metaclass=LexerMeta):
             return
 
         # Form the master regular expression
-        # previous = ('|' + cls._master_re.pattern) if cls._master_re else ''
-        # cls._master_re = cls.regex_module.compile('|'.join(parts) + previous, cls.reflags)
-        cls._master_re = cls.regex_module.compile('|'.join(parts), cls.reflags)
+        # previous = ("|" + cls._master_re.pattern) if cls._master_re else ""
+        # cls._master_re = cls.regex_module.compile("|".join(parts) + previous, cls.reflags)
+        cls._master_re = cls.regex_module.compile("|".join(parts), cls.reflags)
 
         # Verify that that ignore and literals specifiers match the input type
         if not isinstance(cls.ignore, str):
-            raise LexerBuildError('ignore specifier must be a string')
+            raise LexerBuildError("ignore specifier must be a string")
 
         if not all(isinstance(lit, str) for lit in cls.literals):
-            raise LexerBuildError('literals must be specified as strings')
+            raise LexerBuildError("literals must be specified as strings")
 
     def begin(self, cls: type["Lexer"]) -> None:
-        '''
-        Begin a new lexer state
-        '''
+        """Begin a new lexer state."""
 
         if not isinstance(cls, LexerMeta):
-            raise TypeError('state must be a subclass of Lexer')
+            raise TypeError("state must be a subclass of Lexer")
 
         if self.__set_state:
             self.__set_state(cls)
         self.__class__ = cls
 
     def push_state(self, cls: type["Lexer"]) -> None:
-        '''
-        Push a new lexer state onto the stack
-        '''
+        """Push a new lexer state onto the stack."""
 
         if self.__state_stack is None:
             self.__state_stack = []
@@ -392,9 +399,7 @@ class Lexer(metaclass=LexerMeta):
         self.begin(cls)
 
     def pop_state(self) -> None:
-        '''
-        Pop a lexer state from the stack
-        '''
+        """Pop a lexer state from the stack."""
 
         assert self.__state_stack
         self.begin(self.__state_stack.pop())
@@ -490,7 +495,7 @@ class Lexer(metaclass=LexerMeta):
                         # A lexing error
                         self.index = index
                         self.lineno = lineno
-                        tok.type = 'ERROR'
+                        tok.type = "ERROR"
                         tok.value = text[index:]
                         tok = self.error(tok)
                         if tok is not None:
@@ -506,7 +511,8 @@ class Lexer(metaclass=LexerMeta):
             self.index = index
             self.lineno = lineno
 
-    # Default implementations of the error handler. May be changed in subclasses
     def error(self, t: Token) -> Any:
+        """Default implementation of the error handler. May be changed in subclasses."""
+
         assert isinstance(self.index, int)  # pyright: ignore [reportUnknownMemberType] Should always be true at runtime.
-        raise LexError(f'Illegal character {t.value[0]!r} at index {self.index}', t.value, self.index)
+        raise LexError(f"Illegal character {t.value[0]!r} at index {self.index}", t.value, self.index)

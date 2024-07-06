@@ -11,7 +11,7 @@ from cparsing.sly import Parser
 from cparsing.utils import Coord
 
 if TYPE_CHECKING:
-    # Typing hack.
+    # Typing hack. This import doesn't work at runtime. See _typing_compat for more details.
     from cparsing._typing_compat import _
 
 
@@ -73,6 +73,11 @@ class DeclSpecifier:
 
 
 __all__ = ("CParseError", "CParser")
+
+
+# ============================================================================
+# region -------- Post-parsing AST-fixing helpers
+# ============================================================================
 
 
 def _fix_atomic_specifiers_once(decl: Any) -> tuple[Any, bool]:
@@ -247,18 +252,23 @@ def fix_switch_cases(switch_node: c_ast.Switch) -> c_ast.Switch:
     return switch_node
 
 
+# endregion
+
+
 class CParseError(Exception):
     """Exception raised when the CParser can't handle an invalid production/token."""
 
 
 class CParser(Parser):
     debugfile = "sly_cparser.out"
-
-    # Get the token list from the lexer (required)
     tokens = CLexer.tokens
 
     def __init__(self, scope_stack: ChainMap[str, bool]):
         self.scope_stack: ChainMap[str, bool] = scope_stack
+
+    # ============================================================================
+    # region ---- Scope modifying helpers
+    # ============================================================================
 
     def is_type_in_scope(self, name: str) -> bool:
         return self.scope_stack.get(name, False)
@@ -277,6 +287,12 @@ class CParser(Parser):
             raise CParseError(f"{coord}: Typedef {name!r} previously declared as non-typedef in this scope.")
         self.scope_stack[name] = True
 
+    # endregion
+
+    # ============================================================================
+    # region ---- Other parsing helpers
+    # ============================================================================
+
     def _add_declaration_specifier(
         self,
         declspec: Optional[dict[str, list[Any]]],
@@ -285,21 +301,6 @@ class CParser(Parser):
         *,
         append: bool = False,
     ) -> dict[str, list[Any]]:
-        """Declaration specifiers are represented by a dictionary with the entries:
-        * qual: a list of type qualifiers
-        * storage: a list of storage type qualifiers
-        * type: a list of type specifiers
-        * function: a list of function specifiers
-        * alignment: a list of alignment specifiers
-
-        This method is given a declaration specifier, and a
-        new specifier of a given kind.
-        If `append` is True, the new specifier is added to the end of
-        the specifiers list, otherwise it's added at the beginning.
-        Returns the declaration specifier, with the new
-        specifier incorporated.
-        """
-
         spec = declspec or {"qual": [], "storage": [], "type": [], "function": [], "alignment": []}
 
         if append:
@@ -514,6 +515,8 @@ class CParser(Parser):
             decl_tail.type = modifier_head
             return decl
 
+    # endregion
+
     precedence = (  # type: ignore
         ("left", LOR),
         ("left", LAND),
@@ -527,8 +530,11 @@ class CParser(Parser):
         ("left", TIMES, DIVIDE, MOD),
     )
 
-    # ==== Grammar productions
+    # ============================================================================
+    # region ---- Grammar productions
+    #
     # Implementation of the BNF defined in K&R2 A.13
+    # ============================================================================
 
     @_("{ external_declaration }")
     def translation_unit(self, p: Any):
@@ -2065,7 +2071,7 @@ class CParser(Parser):
         p.unified_wstring_literal.coord.col_end = og_col_end + len(p.unified_wstring_literal.value)
         return p.unified_wstring_literal
 
-    # ===============================================================================================
+    # endregion
 
     def error(self, token: Any):
         if token:

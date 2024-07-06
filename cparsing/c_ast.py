@@ -2,7 +2,7 @@
 
 import contextlib
 from collections import deque
-from collections.abc import Generator, Sequence
+from collections.abc import Generator, MutableSequence
 from io import StringIO
 from types import GeneratorType
 from typing import Any, Callable, ClassVar, Literal, Optional
@@ -631,11 +631,12 @@ class NodeVisitor:
         while stack:
             try:
                 node = stack[-1].send(result)
-                stack.append(self._visit(node))
-                result = None
             except StopIteration as exc:
                 stack.pop()
                 result = exc.value
+            else:
+                stack.append(self._visit(node))
+                result = None
 
         return result
 
@@ -845,28 +846,25 @@ class _Unparser(NodeVisitor):
             return f"{expr}"
 
     def _parenthesize_if(self, node: AST, condition: Callable[[AST], bool]) -> Generator[AST, str, str]:
-        """Visits "n" and returns its string representation, parenthesized
-        if the condition function applied to the node returns True.
+        """Visits "n" and returns its string representation, parenthesized if the condition function applied to the
+        node returns True.
         """
 
         result = yield from self._visit_expression(node)
         return f"({result})" if condition(node) else result
 
     def _parenthesize_unless_simple(self, node: AST) -> Generator[AST, str, str]:
-        result = yield from self._parenthesize_if(node, lambda n: not self.is_simple_node(n))
-        return result
+        return (yield from self._parenthesize_if(node, lambda n: not self.is_simple_node(n)))
 
     def _generate_struct_union_body(self, members: list[AST]) -> Generator[AST, str, str]:
         results: list[str] = []
         for decl in members:
-            decl_str = yield from self._generate_stmt(decl)
-            results.append(decl_str)
+            results.append((yield from self._generate_stmt(decl)))
         return "".join(results)
 
     def _generate_stmt(self, node: AST, add_indent: bool = False) -> Generator[AST, str, str]:
-        """Generation from a statement node. This method exists as a wrapper
-        for individual visit_* methods to handle different treatment of
-        some statements in this context.
+        """Generation from a statement node. This method exists as a wrapper for individual visit_* methods to handle
+        different treatment of some statements in this context.
         """
 
         typ = type(node)
@@ -897,13 +895,13 @@ class _Unparser(NodeVisitor):
             # is added to them automatically
             #
             return f"{indent}{result};\n"
-        elif typ in {Compound}:
+        elif typ is Compound:
             # No extra indentation required before the opening brace of a
             # compound - because it consists of multiple lines it has to
             # compute its own indentation.
             #
             return result
-        elif typ in {If}:
+        elif typ is If:
             return f"{indent}{result}"
         else:
             return f"{indent}{result}\n"
@@ -921,8 +919,7 @@ class _Unparser(NodeVisitor):
             align = yield node.align[0]
             results.append(f"{align} ")
 
-        type_ = yield from self._generate_type(node.type)
-        results.append(type_)
+        results.append((yield from self._generate_type(node.type)))
         return "".join(results)
 
     def _generate_type(
@@ -931,10 +928,8 @@ class _Unparser(NodeVisitor):
         modifiers: Optional[list[Any]] = None,
         emit_declname: bool = True,
     ) -> Generator[AST, str, str]:
-        """Recursive generation from a type node. n is the type node.
-        modifiers collects the PtrDecl, ArrayDecl and FuncDecl modifiers
-        encountered on the way down to a TypeDecl, to allow proper
-        generation from it.
+        """Recursive generation from a type node. n is the type node. modifiers collects the PtrDecl, ArrayDecl and
+        FuncDecl modifiers encountered on the way down to a TypeDecl, to allow proper generation from it.
         """
 
         if modifiers is None:
@@ -944,8 +939,7 @@ class _Unparser(NodeVisitor):
             results: list[str] = []
             if node.quals:
                 results.append(" ".join(node.quals) + " ")
-            type_ = yield node.type
-            results.append(type_)
+            results.append((yield node.type))
 
             nstr = [node.declname if (node.declname and emit_declname) else ""]
             # Resolve modifiers.
@@ -963,12 +957,14 @@ class _Unparser(NodeVisitor):
                         nstr.append(" ".join(modifier.dim_quals) + " ")
                     modifier_dim_str = yield modifier.dim
                     nstr.append(f"{modifier_dim_str}]")
+
                 elif isinstance(modifier, FuncDecl):
                     if i != 0 and isinstance(modifiers[i - 1], PtrDecl):
                         nstr.insert(0, "(")
                         nstr.append(")")
                     modifier_args_str = yield modifier.args
                     nstr.append(f"({modifier_args_str})")
+
                 elif isinstance(modifier, PtrDecl):
                     if modifier.quals:
                         modifier_quals_str = " ".join(modifier.quals)
@@ -982,19 +978,15 @@ class _Unparser(NodeVisitor):
                 results.append(" " + "".join(nstr))
             return "".join(results)
         elif isinstance(node, Decl):
-            result = yield from self._generate_decl(node.type)
-            return result
+            return (yield from self._generate_decl(node.type))
         elif isinstance(node, Typename):
-            result = yield from self._generate_type(node.type, emit_declname=emit_declname)
-            return result
+            return (yield from self._generate_type(node.type, emit_declname=emit_declname))
         elif isinstance(node, IdType):
             return " ".join(node.names) + " "
         elif isinstance(node, (ArrayDecl, PtrDecl, FuncDecl)):
-            result = yield from self._generate_type(node.type, [*modifiers, node], emit_declname=emit_declname)
-            return result
+            return (yield from self._generate_type(node.type, [*modifiers, node], emit_declname=emit_declname))
         else:
-            result = yield node
-            return result
+            return (yield node)
 
     def visit_Constant(self, node: Constant) -> str:
         return node.value
@@ -1003,10 +995,10 @@ class _Unparser(NodeVisitor):
         return node.name
 
     def visit_Pragma(self, node: Pragma) -> str:
-        ret = "#pragma"
+        ret = ["#pragma"]
         if node.string:
-            ret += f" {node.string}"
-        return ret
+            ret.append(f"{node.string}")
+        return " ".join(ret)
 
     def visit_ArrayRef(self, node: ArrayRef) -> Generator[AST, str, str]:
         arrref = yield from self._parenthesize_unless_simple(node.name)
@@ -1107,16 +1099,14 @@ class _Unparser(NodeVisitor):
 
     def visit_DeclList(self, node: DeclList) -> Generator[AST, str, str]:
         result: list[str] = []
-        first_decl = yield node.decls[0]
-        result.append(first_decl)
+        result.append((yield node.decls[0]))
 
         if len(node.decls) > 1:
             result.append(", ")
 
             decls_list: list[str] = []
             for decl in node.decls[1:]:
-                decl_str = yield from self.visit_Decl(decl, no_type=True)
-                decls_list.append(decl_str)
+                decls_list.append((yield from self.visit_Decl(decl, no_type=True)))
             result.append(", ".join(decls_list))
 
         return "".join(result)
@@ -1126,9 +1116,7 @@ class _Unparser(NodeVisitor):
         if node.storage:
             result.append(" ".join(node.storage) + " ")
 
-        type_ = yield from self._generate_type(node.type)
-
-        result.append(type_)
+        result.append((yield from self._generate_type(node.type)))
         return "".join(result)
 
     def visit_Cast(self, node: Cast) -> Generator[AST, str, str]:
@@ -1139,16 +1127,14 @@ class _Unparser(NodeVisitor):
     def visit_ExprList(self, node: ExprList) -> Generator[AST, str, str]:
         visited_subexprs: list[str] = []
         for expr in node.exprs:
-            expr_str = yield from self._visit_expression(expr)
-            visited_subexprs.append(expr_str)
+            visited_subexprs.append((yield from self._visit_expression(expr)))
 
         return ", ".join(visited_subexprs)
 
     def visit_InitList(self, node: InitList) -> Generator[AST, str, str]:
         visited_subexprs: list[str] = []
         for expr in node.exprs:
-            expr_str = yield from self._visit_expression(expr)
-            visited_subexprs.append(expr_str)
+            visited_subexprs.append((yield from self._visit_expression(expr)))
 
         return ", ".join(visited_subexprs)
 
@@ -1167,8 +1153,7 @@ class _Unparser(NodeVisitor):
                 # `[:-2] + "\n"` removes the final `,` from the enumerator list
                 enum_body: list[str] = []
                 for value in members:
-                    body_part = yield value
-                    enum_body.append(body_part)
+                    enum_body.append((yield value))
                 results.append("".join(enum_body)[:-2] + "\n")
 
             results.append(self.indent + "}")
@@ -1217,8 +1202,7 @@ class _Unparser(NodeVisitor):
             if node.block_items:
                 block_statements: list[str] = []
                 for stmt in node.block_items:
-                    block_stmt_str = yield from self._generate_stmt(stmt)
-                    block_statements.append(block_stmt_str)
+                    block_statements.append((yield from self._generate_stmt(stmt)))
 
                 results.append("".join(block_statements))
 
@@ -1229,7 +1213,7 @@ class _Unparser(NodeVisitor):
         type_ = yield n.type
         init = yield n.init
 
-        return f"({type_})" + "{" + init + "}"
+        return f"({type_}){{{init}}}"
 
     def visit_EmptyStatement(self, n: EmptyStatement) -> str:
         return ";"
@@ -1237,15 +1221,14 @@ class _Unparser(NodeVisitor):
     def visit_ParamList(self, node: ParamList) -> Generator[AST, str, str]:
         results: list[str] = []
         for param in node.params:
-            param_str = yield param
-            results.append(param_str)
+            results.append((yield param))
         return ", ".join(results)
 
     def visit_Return(self, node: Return) -> Generator[AST, str, str]:
-        result = "return"
+        result = ["return"]
         if node.expr:
             expr = yield node.expr
-            result += f" {expr}"
+            result.append(f" {expr}")
         return f"{result};"
 
     def visit_Break(self, node: Break) -> str:
@@ -1264,23 +1247,19 @@ class _Unparser(NodeVisitor):
     def visit_If(self, n: If) -> Generator[AST, str, str]:
         results = ["if ("]
         if n.cond:
-            cond = yield n.cond
-            results.append(cond)
+            results.append((yield n.cond))
         results.append(")\n")
-        stmt = yield from self._generate_stmt(n.iftrue, add_indent=True)
-        results.append(stmt)
+        results.append((yield from self._generate_stmt(n.iftrue, add_indent=True)))
         if n.iffalse:
             results.append(f"{self.indent}else\n")
-            stmt = yield from self._generate_stmt(n.iffalse, add_indent=True)
-            results.append(stmt)
+            results.append((yield from self._generate_stmt(n.iffalse, add_indent=True)))
         return "".join(results)
 
     def visit_For(self, node: For) -> Generator[AST, str, str]:
         results = ["for ("]
 
         if node.init:
-            init = yield node.init
-            results.append(init)
+            results.append((yield node.init))
         results.append(";")
 
         if node.cond:
@@ -1293,24 +1272,20 @@ class _Unparser(NodeVisitor):
             results.append(f" {next_}")
         results.append(")\n")
 
-        stmt = yield from self._generate_stmt(node.stmt, add_indent=True)
-        results.append(stmt)
+        results.append((yield from self._generate_stmt(node.stmt, add_indent=True)))
         return "".join(results)
 
     def visit_While(self, node: While) -> Generator[AST, str, str]:
         results = ["while ("]
         if node.cond:
-            cond = yield node.cond
-            results.append(cond)
+            results.append((yield node.cond))
         results.append(")\n")
-        stmt = yield from self._generate_stmt(node.stmt, add_indent=True)
-        results.append(stmt)
+        results.append((yield from self._generate_stmt(node.stmt, add_indent=True)))
         return "".join(results)
 
     def visit_DoWhile(self, node: DoWhile) -> Generator[AST, str, str]:
         results = ["do\n"]
-        stmt = yield from self._generate_stmt(node.stmt, add_indent=True)
-        results.append(stmt)
+        results.append((yield from self._generate_stmt(node.stmt, add_indent=True)))
         results.append(f"{self.indent}while (")
 
         if node.cond:
@@ -1337,8 +1312,7 @@ class _Unparser(NodeVisitor):
         expr = yield node
         stmts: list[str] = []
         for stmt in node.stmts:
-            stmt_str = yield from self._generate_stmt(stmt, add_indent=True)
-            stmts.append(stmt_str)
+            stmts.append((yield from self._generate_stmt(stmt, add_indent=True)))
 
         return "".join((f"case {expr}:\n", *stmts))
 
@@ -1346,8 +1320,7 @@ class _Unparser(NodeVisitor):
         s = "default:\n"
         stmts: list[str] = []
         for stmt in node.stmts:
-            stmt_str = yield from self._generate_stmt(stmt, add_indent=True)
-            stmts.append(stmt_str)
+            stmts.append((yield from self._generate_stmt(stmt, add_indent=True)))
 
         return "".join((s, *stmts))
 
@@ -1372,8 +1345,7 @@ class _Unparser(NodeVisitor):
             results.append(self.indent)
             with self.add_indent_level(2):
                 results.append("{\n")
-                body = yield from self._generate_struct_union_body(members)
-                results.append(body)
+                results.append((yield from self._generate_struct_union_body(members)))
 
             results.append(self.indent + "}")
         return "".join(results)
@@ -1389,15 +1361,13 @@ class _Unparser(NodeVisitor):
             results.append(self.indent)
             with self.add_indent_level(2):
                 results.append("{\n")
-                body = yield from self._generate_struct_union_body(members)
-                results.append(body)
+                results.append((yield from self._generate_struct_union_body(members)))
 
             results.append(self.indent + "}")
         return "".join(results)
 
     def visit_Typename(self, node: Typename) -> Generator[AST, str, str]:
-        result = yield from self._generate_type(node.type)
-        return result
+        return (yield from self._generate_type(node.type))
 
     def visit_NamedInitializer(self, node: NamedInitializer) -> Generator[AST, str, str]:
         results: list[str] = []
@@ -1411,24 +1381,19 @@ class _Unparser(NodeVisitor):
 
         expr = yield from self._visit_expression(node.expr)
         results.append(f" = {expr}")
-
         return "".join(results)
 
     def visit_FuncDecl(self, node: FuncDecl) -> Generator[AST, str, str]:
-        result = yield from self._generate_type(node)
-        return result
+        return (yield from self._generate_type(node))
 
     def visit_ArrayDecl(self, node: ArrayDecl) -> Generator[AST, str, str]:
-        result = yield from self._generate_type(node, emit_declname=False)
-        return result
+        return (yield from self._generate_type(node, emit_declname=False))
 
     def visit_TypeDecl(self, node: TypeDecl) -> Generator[AST, str, str]:
-        result = yield from self._generate_type(node, emit_declname=False)
-        return result
+        return (yield from self._generate_type(node, emit_declname=False))
 
     def visit_PtrDecl(self, node: PtrDecl) -> Generator[AST, str, str]:
-        result = yield from self._generate_type(node, emit_declname=False)
-        return result
+        return (yield from self._generate_type(node, emit_declname=False))
 
 
 def unparse(node: AST, *, reduce_parentheses: bool = False) -> str:
@@ -1438,7 +1403,7 @@ def unparse(node: AST, *, reduce_parentheses: bool = False) -> str:
     return unparser.visit(node)
 
 
-def compare_asts(first_node: TUnion[AST, Sequence[AST]], second_node: TUnion[AST, Sequence[AST]]) -> bool:
+def compare_asts(first_node: TUnion[AST, MutableSequence[AST]], second_node: TUnion[AST, MutableSequence[AST]]) -> bool:
     """Compare two AST nodes for equality, to see if they have the same field structure with the same values.
 
     This only takes into account fields present in a node's _fields list while ignoring "coord".
@@ -1462,13 +1427,11 @@ def compare_asts(first_node: TUnion[AST, Sequence[AST]], second_node: TUnion[AST
 
         if isinstance(node1, list):
             assert isinstance(node2, list)
-            try:
-                # zip(..., strict=True) is only on >=3.10.
-                if len(node1) != len(node2):
-                    return False
-                nodes.extend(zip(node1, node2))
-            except ValueError:
+
+            # zip(..., strict=True) is only on >=3.10.
+            if len(node1) != len(node2):
                 return False
+            nodes.extend(zip(node1, node2))
 
             continue
 
