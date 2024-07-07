@@ -65,8 +65,10 @@ extend-ignore = [
     "EM101",
     "EM102",
     "SIM108", # Don't always use ternary for readability.
-    "RET505", # Allow else and elif after return for readability.
-    "RET506", # Allow else and elift after raise for readability.
+    # Allow else and elif after return, raise, and continue, for readability.
+    "RET505",
+    "RET506",
+    "RET507",
     "ERA001", # Leave commented code alone.
 ]
 unfixable = [

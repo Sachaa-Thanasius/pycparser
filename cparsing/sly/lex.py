@@ -404,7 +404,7 @@ class Lexer(metaclass=LexerMeta):
         assert self.__state_stack
         self.begin(self.__state_stack.pop())
 
-    def tokenize(self, text: str, lineno: int = 1, index: int = 0) -> Generator[Token, Any, None]:
+    def tokenize(self, text: str, lineno: int = 1, index: int = 0) -> Generator[Token]:
         _ignored_tokens: set[str] = _MISSING
         _master_re: re.Pattern[str] = _MISSING
         _ignore: str = _MISSING
