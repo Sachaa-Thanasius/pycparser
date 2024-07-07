@@ -76,7 +76,7 @@ __all__ = ("CParseError", "CParser")
 
 
 # ============================================================================
-# region -------- Post-parsing AST-fixing helpers
+# region -------- Post-parsing helpers
 # ============================================================================
 
 
@@ -267,7 +267,7 @@ class CParser(Parser):
         self.scope_stack: ChainMap[str, bool] = scope_stack
 
     # ============================================================================
-    # region ---- Scope modifying helpers
+    # region ---- Scope modification helpers
     # ============================================================================
 
     def is_type_in_scope(self, name: str) -> bool:
@@ -290,7 +290,7 @@ class CParser(Parser):
     # endregion
 
     # ============================================================================
-    # region ---- Other parsing helpers
+    # region ---- Parsing helpers
     # ============================================================================
 
     def _add_declaration_specifier(
@@ -540,10 +540,12 @@ class CParser(Parser):
     def translation_unit(self, p: Any):
         """Handle a translation unit.
 
+        Notes
+        -----
         This allows empty input. Not strictly part of the C99 Grammar, but useful in practice.
         """
 
-        # Note: external_declaration is already a list
+        # NOTE: external_declaration is already a list
         return c_ast.File([e for ext_decl in p.external_declaration for e in ext_decl])
 
     @_("function_definition")
@@ -747,8 +749,8 @@ class CParser(Parser):
 
         # p[1] is either a list or None
         #
-        # XXX: Accessing optional components via index puts the component in a
-        # 1-tuple.
+        # NOTE: Accessing optional components via index puts the component in a
+        # 1-tuple, so it's now being accessed with p[1][0].
 
         declarator_list = p[1][0]
         if declarator_list is None:
@@ -806,13 +808,12 @@ class CParser(Parser):
 
         return p.decl_body
 
-    #
     @_(
         "type_qualifier [ declaration_specifiers_no_type ]",
         "storage_class_specifier [ declaration_specifiers_no_type ]",
         "function_specifier [ declaration_specifiers_no_type ]",
-        # # Without this, `typedef _Atomic(T) U` will parse incorrectly because the
-        # # _Atomic qualifier will match, instead of the specifier.
+        # Without this, `typedef _Atomic(T) U` will parse incorrectly because the
+        # _Atomic qualifier will match instead of the specifier.
         "atomic_specifier [ declaration_specifiers_no_type ]",
         "alignment_specifier [ declaration_specifiers_no_type ]",
     )
@@ -993,7 +994,7 @@ class CParser(Parser):
         # None means no list of members
         return klass(name=p[1], decls=None, coord=Coord.from_literal(p, p.struct_or_union))
 
-    @_('struct_or_union "{" struct_declaration { struct_declaration } "}"')
+    @_('struct_or_union LBRACE struct_declaration { struct_declaration } RBRACE')
     def struct_or_union_specifier(self, p: Any):
         klass = c_ast.Struct if (p.struct_or_union == "struct") else c_ast.Union
         # Empty sequence means an empty list of members
@@ -1007,8 +1008,8 @@ class CParser(Parser):
         return klass(name=None, decls=decls, coord=coord)
 
     @_(
-        'struct_or_union ID "{" struct_declaration { struct_declaration } "}"',
-        'struct_or_union TYPEID "{" struct_declaration { struct_declaration } "}"',
+        'struct_or_union ID LBRACE struct_declaration { struct_declaration } RBRACE',
+        'struct_or_union TYPEID LBRACE struct_declaration { struct_declaration } RBRACE',
     )
     def struct_or_union_specifier(self, p: Any):
         klass = c_ast.Struct if (p.struct_or_union == "struct") else c_ast.Union
@@ -1093,13 +1094,13 @@ class CParser(Parser):
     def enum_specifier(self, p: Any):
         return c_ast.Enum(p[1], None, coord=Coord.from_literal(p, p.ENUM))
 
-    @_('ENUM "{" enumerator_list "}"')
+    @_('ENUM LBRACE enumerator_list RBRACE')
     def enum_specifier(self, p: Any):
         return c_ast.Enum(None, p.enumerator_list, coord=Coord.from_literal(p, p.ENUM))
 
     @_(
-        'ENUM ID "{" enumerator_list "}"',
-        'ENUM TYPEID "{" enumerator_list "}"',
+        'ENUM ID LBRACE enumerator_list RBRACE',
+        'ENUM TYPEID LBRACE enumerator_list RBRACE',
     )
     def enum_specifier(self, p: Any):
         return c_ast.Enum(p[1], p.enumerator_list, coord=Coord.from_literal(p, p.ENUM))
@@ -1135,32 +1136,28 @@ class CParser(Parser):
         return p[0]
 
     # ========
-    # ---- `subst` use — be careful.
+    # Experimental usage of `subst` for SUB_declarator and direct_SUB_declarator rules.
     # ========
 
-    id_subst_single = subst({"SUB": "id"}, {"SUB": "typeid"}, {"SUB": "typeid_noparen"})
-
-    @id_subst_single
-    @_("direct_${SUB}_declarator")
-    def SUB_declarator(self, p: Any):
-        return p[0]
-
-    @id_subst_single
-    @_("pointer direct_${SUB}_declarator")
-    def SUB_declarator(self, p: Any):
-        return self._type_modify_decl(p[1], p.pointer)
-
-    del id_subst_single
-
     # fmt: off
-    id_subst_multi = subst(
+    subst_id_multi = subst(
         {"SUB1": "id",              "SUB2": "ID"},
         {"SUB1": "typeid",          "SUB2": "TYPEID"},
         {"SUB1": "typeid_noparen",  "SUB2": "TYPEID"},
     )
     # fmt: on
 
-    @id_subst_multi
+    @subst_id_multi
+    @_("direct_${SUB1}_declarator")
+    def SUB1_declarator(self, p: Any):
+        return p[0]
+
+    @subst_id_multi
+    @_("pointer direct_${SUB1}_declarator")
+    def SUB1_declarator(self, p: Any):
+        return self._type_modify_decl(p[1], p.pointer)
+
+    @subst_id_multi
     @_("${SUB2}")
     def direct_SUB1_declarator(self, p: Any):
         return c_ast.TypeDecl(declname=p[0], type=None, quals=None, align=None, coord=Coord.from_literal(p, p[0]))
@@ -1170,7 +1167,7 @@ class CParser(Parser):
     def direct_SUB_declarator(self, p: Any):
         return p[1]
 
-    @id_subst_multi
+    @subst_id_multi
     @_('direct_${SUB1}_declarator "[" [ type_qualifier_list ] [ assignment_expression ] "]"')
     def direct_SUB1_declarator(self, p: Any):
         if p.type_qualifier_list and p.assignment_expression:
@@ -1185,7 +1182,7 @@ class CParser(Parser):
         arr = c_ast.ArrayDecl(type=None, dim=dim, dim_quals=dim_quals, coord=p[0].coord)
         return self._type_modify_decl(decl=p[0], modifier=arr)
 
-    @id_subst_multi
+    @subst_id_multi
     @_('direct_${SUB1}_declarator "[" STATIC [ type_qualifier_list ] assignment_expression "]"')
     def direct_SUB1_declarator(self, p: Any):
         listed_quals: list[list[Any]] = [
@@ -1201,7 +1198,7 @@ class CParser(Parser):
 
         return self._type_modify_decl(decl=p[0], modifier=arr)
 
-    @id_subst_multi
+    @subst_id_multi
     @_('direct_${SUB1}_declarator "[" type_qualifier_list STATIC assignment_expression "]"')
     def direct_SUB1_declarator(self, p: Any):
         listed_quals: list[list[Any]] = [(item if isinstance(item, list) else [item]) for item in [p[3], p[4]]]
@@ -1217,7 +1214,7 @@ class CParser(Parser):
 
     # Special for VLAs
     #
-    @id_subst_multi
+    @subst_id_multi
     @_('direct_${SUB1}_declarator "[" [ type_qualifier_list ] TIMES "]"')
     def direct_SUB1_declarator(self, p: Any):
         arr = c_ast.ArrayDecl(
@@ -1229,7 +1226,7 @@ class CParser(Parser):
 
         return self._type_modify_decl(decl=p[0], modifier=arr)
 
-    @id_subst_multi
+    @subst_id_multi
     @_(
         'direct_${SUB1}_declarator "(" parameter_type_list ")"',
         'direct_${SUB1}_declarator "(" [ identifier_list ] ")"',
@@ -1251,7 +1248,8 @@ class CParser(Parser):
         # and incorrectly interpreted as TYPEID.  We need to add the
         # parameters to the scope the moment the lexer sees LBRACE.
         #
-        if self.lookahead.type == "{" and func.args is not None:
+        print(self.lookahead.type)
+        if self.lookahead.type == "LBRACE" and func.args is not None:
             for param in func.args.params:
                 if isinstance(param, c_ast.EllipsisParam):
                     break
@@ -1259,9 +1257,7 @@ class CParser(Parser):
 
         return self._type_modify_decl(decl=p[0], modifier=func)
 
-    del id_subst_multi
-
-    # ========
+    del subst_id_multi
 
     @_("TIMES [ type_qualifier_list ] [ pointer ]")
     def pointer(self, p: Any):
@@ -1384,8 +1380,8 @@ class CParser(Parser):
         return p.assignment_expression
 
     @_(
-        '"{" [ initializer_list ] "}"',
-        '"{" initializer_list "," "}"',
+        'LBRACE [ initializer_list ] RBRACE',
+        'LBRACE initializer_list "," RBRACE',
     )
     def initializer(self, p: Any):
         if p.initializer_list is None:
@@ -1529,7 +1525,7 @@ class CParser(Parser):
         else:
             return [item]
 
-    @_('"{" { block_item } "}"')
+    @_('LBRACE { block_item } RBRACE')
     def compound_statement(self, p: Any):
         """Handle a compound statement.
 
@@ -1775,7 +1771,7 @@ class CParser(Parser):
     def postfix_expression(self, p: Any):
         return c_ast.UnaryOp("p" + p[1], p.postfix_expression, coord=p[1].coord)
 
-    @_('"(" type_name ")" "{" initializer_list [ "," ] "}"')
+    @_('"(" type_name ")" LBRACE initializer_list [ "," ] RBRACE')
     def postfix_expression(self, p: Any):
         return c_ast.CompoundLiteral(p.type_name, p.initializer_list)
 

@@ -159,6 +159,9 @@ class CLexer(Lexer):
         # Ellipsis (...)
         ELLIPSIS,
 
+        # Scope delimiters
+        LBRACE, RBRACE,
+
         # Pre-processor
         PP_HASH,       # "#"
         PP_PRAGMA,     # "pragma"
@@ -166,8 +169,8 @@ class CLexer(Lexer):
     }
     # fmt: on
 
-    # ---- Delimiters (regular and for scope).
-    literals = {",", ".", ";", ":", "(", ")", "[", "]", "{", "}"}
+    # ---- Regular delimiters
+    literals = {",", ".", ";", ":", "(", ")", "[", "]"}
 
     ignore = " \t"
 
@@ -345,14 +348,12 @@ class CLexer(Lexer):
         return t
 
     @_(r"\{")
-    def lbrace(self, t: Token) -> Token:
-        t.type = "{"
+    def LBRACE(self, t: Token) -> Token:
         self.create_scope()
         return t
 
     @_(r"\}")
-    def rbrace(self, t: Token) -> Token:
-        t.type = "}"
+    def RBRACE(self, t: Token) -> Token:
         self.pop_scope()
         return t
 

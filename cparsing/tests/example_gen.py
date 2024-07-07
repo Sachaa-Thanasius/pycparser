@@ -10,14 +10,21 @@ from cparsing.c_lexer import CLexer
 from cparsing.c_parser import CParseError, CParser
 
 source = """\
-typedef char TT;
 void foo(int TT){
     TT = 10;
 }
 """
 
+# Cases:
+# 1.
 # char myvar[] = "hello";
-
+#
+# 2.
+# void foo(int TT){
+#     TT = 10;
+# }
+#
+# 3.
 # typedef char TT;
 # void foo(int TT){
 #     TT = 10;
@@ -25,13 +32,13 @@ void foo(int TT){
 
 
 def check_og(source: str) -> Any:
-    print("Parsing with OG...\n")
+    print("-- Parsing with OG...\n")
     parser = OGParser()
     return parser.parse(source)
 
 
 def check_new(source: str) -> Any:
-    print("Parsing with New...\n")
+    print("-- Parsing with New...\n")
     scope_stack: ChainMap[str, bool] = ChainMap()
     lexer = CLexer(scope_stack)
     parser = CParser(scope_stack)
@@ -62,7 +69,7 @@ if __name__ == "__main__":
     try:
         new_result = check_new(source)
     except CParseError:
-        print(f"og_result\n{og_result}")
+        print(f"---- og_result ----\n{og_result}")
         raise
 
     print(new_result)
