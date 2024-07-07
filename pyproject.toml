@@ -1,5 +1,5 @@
 [tool.ruff]
-include = ["cparsing/*"]
+include = ["cparsing/**/*.py"]
 line-length = 120
 target-version = "py39"
 

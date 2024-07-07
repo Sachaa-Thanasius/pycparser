@@ -2,3 +2,5 @@
 a93a7342364ebc27e42cd2e9d386b400e6951963
 # Migrate to double quotes in cparsing/sly/yacc.py
 693af4b0fd3945b990a3253d36f8598a0fdfa573
+# Migrate to double quotes in cparsing/
+5dff265886c5fa241c3a0fb3f9b19f1482d6a425
