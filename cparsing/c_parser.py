@@ -12,7 +12,7 @@ from cparsing.utils import Coord
 
 if TYPE_CHECKING:
     # Typing hack. This import doesn't work at runtime. See _typing_compat for more details.
-    from cparsing._typing_compat import _
+    from cparsing._typing_compat import _, subst
 
 
 class _StructDeclaratorDict(TypedDict):
@@ -330,7 +330,7 @@ class CParser(Parser):
             if not isinstance(tn, c_ast.IdType):
                 if len(typename) > 1:
                     raise CParseError(f"{tn.coord}: Invalid multiple types specified")
-                else:  # noqa: RET506
+                else:
                     type_.type = tn
                     return decl
 
@@ -1134,229 +1134,45 @@ class CParser(Parser):
     def declarator(self, p: Any):
         return p[0]
 
-    # ===============================================================================================
+    # ========
+    # ---- `subst` use — be careful.
+    # ========
 
-    @_("direct_id_declarator")
-    def id_declarator(self, p: Any):
-        return p.direct_id_declarator
+    id_subst_single = subst({"SUB": "id"}, {"SUB": "typeid"}, {"SUB": "typeid_noparen"})
 
-    @_("pointer direct_id_declarator")
-    def id_declarator(self, p: Any):
-        return self._type_modify_decl(p.direct_id_declarator, p.pointer)
+    @id_subst_single
+    @_("direct_${SUB}_declarator")
+    def SUB_declarator(self, p: Any):
+        return p[0]
 
-    @_("direct_typeid_declarator")
-    def typeid_declarator(self, p: Any):
-        return p.direct_typeid_declarator
+    @id_subst_single
+    @_("pointer direct_${SUB}_declarator")
+    def SUB_declarator(self, p: Any):
+        return self._type_modify_decl(p[1], p.pointer)
 
-    @_("pointer direct_typeid_declarator")
-    def typeid_declarator(self, p: Any):
-        return self._type_modify_decl(p.direct_typeid_declarator, p.pointer)
+    del id_subst_single
 
-    @_("direct_typeid_noparen_declarator")
-    def typeid_noparen_declarator(self, p: Any):
-        return p.direct_typeid_noparen_declarator
-
-    @_("pointer direct_typeid_noparen_declarator")
-    def typeid_noparen_declarator(self, p: Any):
-        return self._type_modify_decl(p.direct_typeid_noparen_declarator, p.pointer)
-
-    # ===============================================================================================
-
-    @_("ID")
-    def direct_id_declarator(self, p: Any):
-        return c_ast.TypeDecl(declname=p.ID, type=None, quals=None, align=None, coord=Coord.from_literal(p, p.ID))
-
-    @_('"(" id_declarator ")"')
-    def direct_id_declarator(self, p: Any):
-        return p[1]
-
-    @_('direct_id_declarator "[" [ type_qualifier_list ] [ assignment_expression ] "]"')
-    def direct_id_declarator(self, p: Any):
-        if p.type_qualifier_list and p.assignment_expression:
-            dim = p.assignment_expression
-            dim_quals: list[Any] = p.type_qualifier_list or []
-        else:
-            dim = p.type_qualifier_list or p.assignment_expression
-            dim_quals = []
-
-        # Accept dimension qualifiers
-        # Per C99 6.7.5.3 p7
-        arr = c_ast.ArrayDecl(type=None, dim=dim, dim_quals=dim_quals, coord=p[0].coord)
-        return self._type_modify_decl(decl=p[0], modifier=arr)
-
-    @_('direct_id_declarator "[" STATIC [ type_qualifier_list ] assignment_expression "]"')
-    def direct_id_declarator(self, p: Any):
-        listed_quals: list[list[Any]] = [
-            (item if isinstance(item, list) else [item]) for item in [p.type_qualifier_list, p.assignment_expression]
-        ]
-        dim_quals = [qual for sublist in listed_quals for qual in sublist if qual is not None]
-        arr = c_ast.ArrayDecl(
-            type=None,
-            dim=p.assignment_expression,
-            dim_quals=dim_quals,
-            coord=p[0].coord,
-        )
-
-        return self._type_modify_decl(decl=p[0], modifier=arr)
-
-    @_('direct_id_declarator "[" type_qualifier_list STATIC assignment_expression "]"')
-    def direct_id_declarator(self, p: Any):
-        listed_quals: list[list[Any]] = [(item if isinstance(item, list) else [item]) for item in [p[3], p[4]]]
-        dim_quals = [qual for sublist in listed_quals for qual in sublist if qual is not None]
-        arr = c_ast.ArrayDecl(
-            type=None,
-            dim=p.assignment_expression,
-            dim_quals=dim_quals,
-            coord=p[0].coord,
-        )
-
-        return self._type_modify_decl(decl=p[0], modifier=arr)
-
-    # Special for VLAs
-    #
-    @_('direct_id_declarator "[" [ type_qualifier_list ] TIMES "]"')
-    def direct_id_declarator(self, p: Any):
-        arr = c_ast.ArrayDecl(
-            type=None,
-            dim=c_ast.Id(p.TIMES, coord=p[0].coord),
-            dim_quals=p.type_qualifier_list or [],
-            coord=p[0].coord,
-        )
-
-        return self._type_modify_decl(decl=p[0], modifier=arr)
-
-    @_(
-        'direct_id_declarator "(" parameter_type_list ")"',
-        'direct_id_declarator "(" [ identifier_list ] ")"',
+    # fmt: off
+    id_subst_multi = subst(
+        {"SUB1": "id",              "SUB2": "ID"},
+        {"SUB1": "typeid",          "SUB2": "TYPEID"},
+        {"SUB1": "typeid_noparen",  "SUB2": "TYPEID"},
     )
-    def direct_id_declarator(self, p: Any):
-        # TODO: Depends on an implementation detail of optional components to determine the difference. Consider
-        # separating for clarity.
-        args = p[2][0] if isinstance(p[2], tuple) else p[2]
-        func = c_ast.FuncDecl(args=args, type=None, coord=p[0].coord)
+    # fmt: on
 
-        # To see why the lookahead token is needed, consider:
-        #   typedef char TT;
-        #   void foo(int TT) { TT = 10; }
-        # Outside the function, TT is a typedef, but inside (starting and
-        # ending with the braces) it's a parameter.  The trouble begins with
-        # yacc's lookahead token.  We don't know if we're declaring or
-        # defining a function until we see LBRACE, but if we wait for yacc to
-        # trigger a rule on that token, then TT will have already been read
-        # and incorrectly interpreted as TYPEID.  We need to add the
-        # parameters to the scope the moment the lexer sees LBRACE.
-        #
-        if self.lookahead.type == "{" and func.args is not None:
-            for param in func.args.params:
-                if isinstance(param, c_ast.EllipsisParam):
-                    break
-                self.add_identifier_to_scope(param.name, param.coord)
-
-        return self._type_modify_decl(decl=p[0], modifier=func)
-
-    # ===============================================================================================
-
-    @_("TYPEID")
-    def direct_typeid_declarator(self, p: Any):
-        return c_ast.TypeDecl(declname=p[0], type=None, quals=None, align=None, coord=Coord.from_literal(p, p.TYPEID))
-
-    @_('"(" typeid_declarator ")"')
-    def direct_typeid_declarator(self, p: Any):
-        return p[1]
-
-    @_('direct_typeid_declarator "[" [ type_qualifier_list ] [ assignment_expression ] "]"')
-    def direct_typeid_declarator(self, p: Any):
-        if p.type_qualifier_list and p.assignment_expression:
-            dim = p.assignment_expression
-            dim_quals: list[Any] = p.type_qualifier_list or []
-        else:
-            dim = p.type_qualifier_list or p.assignment_expression
-            dim_quals = []
-
-        # Accept dimension qualifiers
-        # Per C99 6.7.5.3 p7
-        arr = c_ast.ArrayDecl(type=None, dim=dim, dim_quals=dim_quals, coord=p[0].coord)
-
-        return self._type_modify_decl(decl=p[0], modifier=arr)
-
-    @_('direct_typeid_declarator "[" STATIC [ type_qualifier_list ] assignment_expression "]"')
-    def direct_typeid_declarator(self, p: Any):
-        listed_quals: list[list[Any]] = [
-            (item if isinstance(item, list) else [item]) for item in [p.type_qualifier_list, p.assignment_expression]
-        ]
-        dim_quals = [qual for sublist in listed_quals for qual in sublist if qual is not None]
-        arr = c_ast.ArrayDecl(
-            type=None,
-            dim=p.assignment_expression,
-            dim_quals=dim_quals,
-            coord=p[0].coord,
-        )
-
-        return self._type_modify_decl(decl=p[0], modifier=arr)
-
-    @_('direct_typeid_declarator "[" type_qualifier_list STATIC assignment_expression "]"')
-    def direct_typeid_declarator(self, p: Any):
-        listed_quals: list[list[Any]] = [(item if isinstance(item, list) else [item]) for item in [p[3], p[4]]]
-        dim_quals = [qual for sublist in listed_quals for qual in sublist if qual is not None]
-        arr = c_ast.ArrayDecl(
-            type=None,
-            dim=p.assignment_expression,
-            dim_quals=dim_quals,
-            coord=p[0].coord,
-        )
-
-        return self._type_modify_decl(decl=p[0], modifier=arr)
-
-    # Special for VLAs
-    #
-    @_('direct_typeid_declarator "[" [ type_qualifier_list ] TIMES "]"')
-    def direct_typeid_declarator(self, p: Any):
-        arr = c_ast.ArrayDecl(
-            type=None,
-            dim=c_ast.Id(p.TIMES, coord=p[0].coord),
-            dim_quals=p.type_qualifier_list or [],
-            coord=p[0].coord,
-        )
-
-        return self._type_modify_decl(decl=p[0], modifier=arr)
-
-    @_(
-        'direct_typeid_declarator "(" parameter_type_list ")"',
-        'direct_typeid_declarator "(" [ identifier_list ] ")"',
-    )
-    def direct_typeid_declarator(self, p: Any):
-        # TODO: Depends on an implementation detail of optional components to determine the difference. Consider
-        # separating for clarity.
-        args = p[2][0] if isinstance(p[2], tuple) else p[2]
-        func = c_ast.FuncDecl(args=args, type=None, coord=p[0].coord)
-
-        # To see why the lookahead token is needed, consider:
-        #   typedef char TT;
-        #   void foo(int TT) { TT = 10; }
-        # Outside the function, TT is a typedef, but inside (starting and
-        # ending with the braces) it's a parameter.  The trouble begins with
-        # yacc's lookahead token.  We don't know if we're declaring or
-        # defining a function until we see LBRACE, but if we wait for yacc to
-        # trigger a rule on that token, then TT will have already been read
-        # and incorrectly interpreted as TYPEID.  We need to add the
-        # parameters to the scope the moment the lexer sees LBRACE.
-        #
-        if self.lookahead.type == "{" and func.args is not None:
-            for param in func.args.params:
-                if isinstance(param, c_ast.EllipsisParam):
-                    break
-                self.add_identifier_to_scope(param.name, param.coord)
-
-        return self._type_modify_decl(decl=p[0], modifier=func)
-
-    # ===============================================================================================
-
-    @_("TYPEID")
-    def direct_typeid_noparen_declarator(self, p: Any):
+    @id_subst_multi
+    @_("${SUB2}")
+    def direct_SUB1_declarator(self, p: Any):
         return c_ast.TypeDecl(declname=p[0], type=None, quals=None, align=None, coord=Coord.from_literal(p, p[0]))
 
-    @_('direct_typeid_noparen_declarator "[" [ type_qualifier_list ] [ assignment_expression ] "]"')
-    def direct_typeid_noparen_declarator(self, p: Any):
+    @subst({"SUB": "id"}, {"SUB": "typeid"})
+    @_('"(" ${SUB}_declarator ")"')
+    def direct_SUB_declarator(self, p: Any):
+        return p[1]
+
+    @id_subst_multi
+    @_('direct_${SUB1}_declarator "[" [ type_qualifier_list ] [ assignment_expression ] "]"')
+    def direct_SUB1_declarator(self, p: Any):
         if p.type_qualifier_list and p.assignment_expression:
             dim = p.assignment_expression
             dim_quals: list[Any] = p.type_qualifier_list or []
@@ -1367,11 +1183,11 @@ class CParser(Parser):
         # Accept dimension qualifiers
         # Per C99 6.7.5.3 p7
         arr = c_ast.ArrayDecl(type=None, dim=dim, dim_quals=dim_quals, coord=p[0].coord)
-
         return self._type_modify_decl(decl=p[0], modifier=arr)
 
-    @_('direct_typeid_noparen_declarator "[" STATIC [ type_qualifier_list ] assignment_expression "]"')
-    def direct_typeid_noparen_declarator(self, p: Any):
+    @id_subst_multi
+    @_('direct_${SUB1}_declarator "[" STATIC [ type_qualifier_list ] assignment_expression "]"')
+    def direct_SUB1_declarator(self, p: Any):
         listed_quals: list[list[Any]] = [
             (item if isinstance(item, list) else [item]) for item in [p.type_qualifier_list, p.assignment_expression]
         ]
@@ -1385,8 +1201,9 @@ class CParser(Parser):
 
         return self._type_modify_decl(decl=p[0], modifier=arr)
 
-    @_('direct_typeid_noparen_declarator "[" type_qualifier_list STATIC assignment_expression "]"')
-    def direct_typeid_noparen_declarator(self, p: Any):
+    @id_subst_multi
+    @_('direct_${SUB1}_declarator "[" type_qualifier_list STATIC assignment_expression "]"')
+    def direct_SUB1_declarator(self, p: Any):
         listed_quals: list[list[Any]] = [(item if isinstance(item, list) else [item]) for item in [p[3], p[4]]]
         dim_quals = [qual for sublist in listed_quals for qual in sublist if qual is not None]
         arr = c_ast.ArrayDecl(
@@ -1400,8 +1217,9 @@ class CParser(Parser):
 
     # Special for VLAs
     #
-    @_('direct_typeid_noparen_declarator "[" [ type_qualifier_list ] TIMES "]"')
-    def direct_typeid_noparen_declarator(self, p: Any):
+    @id_subst_multi
+    @_('direct_${SUB1}_declarator "[" [ type_qualifier_list ] TIMES "]"')
+    def direct_SUB1_declarator(self, p: Any):
         arr = c_ast.ArrayDecl(
             type=None,
             dim=c_ast.Id(p.TIMES, coord=p[0].coord),
@@ -1411,11 +1229,12 @@ class CParser(Parser):
 
         return self._type_modify_decl(decl=p[0], modifier=arr)
 
+    @id_subst_multi
     @_(
-        'direct_typeid_noparen_declarator "(" parameter_type_list ")"',
-        'direct_typeid_noparen_declarator "(" [ identifier_list ] ")"',
+        'direct_${SUB1}_declarator "(" parameter_type_list ")"',
+        'direct_${SUB1}_declarator "(" [ identifier_list ] ")"',
     )
-    def direct_typeid_noparen_declarator(self, p: Any):
+    def direct_SUB1_declarator(self, p: Any):
         # TODO: Depends on an implementation detail of optional components to determine the difference. Consider
         # separating for clarity.
         args = p[2][0] if isinstance(p[2], tuple) else p[2]
@@ -1427,10 +1246,10 @@ class CParser(Parser):
         # Outside the function, TT is a typedef, but inside (starting and
         # ending with the braces) it's a parameter.  The trouble begins with
         # yacc's lookahead token.  We don't know if we're declaring or
-        # defining a function until we see "{", but if we wait for yacc to
+        # defining a function until we see LBRACE, but if we wait for yacc to
         # trigger a rule on that token, then TT will have already been read
         # and incorrectly interpreted as TYPEID.  We need to add the
-        # parameters to the scope the moment the lexer sees "{".
+        # parameters to the scope the moment the lexer sees LBRACE.
         #
         if self.lookahead.type == "{" and func.args is not None:
             for param in func.args.params:
@@ -1440,7 +1259,9 @@ class CParser(Parser):
 
         return self._type_modify_decl(decl=p[0], modifier=func)
 
-    # ===============================================================================================
+    del id_subst_multi
+
+    # ========
 
     @_("TIMES [ type_qualifier_list ] [ pointer ]")
     def pointer(self, p: Any):

@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, List, Optional, Tuple, Type, Union
+from typing import Any, Optional, Union
 
 import pytest
 
@@ -7,7 +7,9 @@ from cparsing import c_ast, parse
 from cparsing.c_parser import CParseError
 from cparsing.utils import Coord
 
-# ======== Helper utilities.
+# ============================================================================
+# region -------- Helpers.
+# ============================================================================
 
 SAMPLE_CFILES_PATH = Path().resolve(strict=True) / "tests" / "c_files"
 
@@ -17,13 +19,13 @@ _MISSING: Any = object()
 def DeclWithDefaults(
     name: str,
     type: c_ast.AST,  # noqa: A002
-    quals: List[str] = _MISSING,
-    align: List[c_ast.Alignas] = _MISSING,
-    storage: List[str] = _MISSING,
-    funcspec: List[Any] = _MISSING,
+    quals: list[str] = _MISSING,
+    align: list[c_ast.Alignas] = _MISSING,
+    storage: list[str] = _MISSING,
+    funcspec: list[Any] = _MISSING,
     init: Optional[c_ast.AST] = None,
     bitsize: Optional[c_ast.AST] = None,
-):
+) -> c_ast.Decl:
     """Create a c_ast.Decl with common defaults for various fields if they aren't passed in.
 
     Defaults may be added to the actual node eventually, but for now, this eases repetition in testing.
@@ -40,11 +42,15 @@ def DeclWithDefaults(
     return c_ast.Decl(name, quals, align, storage, funcspec, type, init, bitsize)
 
 
-# =====================================================================================================================
+# endregion
 
-# ======== Actual tests.
+# ============================================================================
+# region -------- Actual tests.
+# ============================================================================
 
-# ==== Fundamentals
+# ========
+# region ---- Fundamentals
+# ========
 
 
 @pytest.mark.parametrize(
@@ -85,7 +91,7 @@ def test_initial_semi(test_input: str, expected: c_ast.AST):
     assert tree == expected
 
 
-@pytest.mark.xfail
+@pytest.mark.xfail()
 def test_coords():
     """Tests the "coordinates" of parsed elements - file name, line and column numbers, with modification
     inserted by #line directives.
@@ -176,7 +182,7 @@ def test_coords():
     assert f6.ext[0].decl.type.args.params[1].coord == Coord("", 3, *(17, 0))
 
 
-@pytest.mark.xfail
+@pytest.mark.xfail()
 def test_forloop_coord() -> None:
     from cparsing.utils import Coord
 
@@ -930,8 +936,8 @@ def test_func_decls_with_array_dim_qualifiers(test_input: str, expected: c_ast.A
 def test_qualifiers_storage_specifiers_1(
     test_input: str,
     index: int,
-    expected_quals: List[str],
-    expected_storage: List[str],
+    expected_quals: list[str],
+    expected_storage: list[str],
 ):
     tree = parse(test_input).ext[index]
 
@@ -1041,7 +1047,7 @@ def test_qualifiers_storage_specifiers_2():
         ),
     ],
 )
-def test_atomic_specifier(test_input: str, index: Union[int, slice], expected: Union[c_ast.AST, List[c_ast.AST]]):
+def test_atomic_specifier(test_input: str, index: Union[int, slice], expected: Union[c_ast.AST, list[c_ast.AST]]):
     tree = parse(test_input)
     decl = tree.ext[index]
     assert c_ast.compare_asts(decl, expected)
@@ -1519,7 +1525,7 @@ def test_enums(test_input: str, expected: c_ast.AST) -> None:
         ),
     ],
 )
-def test_typedef(test_input: str, index: Union[int, slice], expected: Union[c_ast.AST, List[c_ast.AST]]) -> None:
+def test_typedef(test_input: str, index: Union[int, slice], expected: Union[c_ast.AST, list[c_ast.AST]]) -> None:
     tree = parse(test_input)
     assert c_ast.compare_asts(tree.ext[index], expected)
 
@@ -1769,13 +1775,13 @@ def test_typedef_error(test_input: str):
         ),
     ],
 )
-def test_struct_union(test_input: str, index: Union[int, slice], expected: Union[c_ast.AST, List[c_ast.AST]]) -> None:
+def test_struct_union(test_input: str, index: Union[int, slice], expected: Union[c_ast.AST, list[c_ast.AST]]) -> None:
     tree = parse(test_input)
     type_ = tree.ext[index]
     assert c_ast.compare_asts(type_, expected)
 
 
-@pytest.mark.xfail
+@pytest.mark.xfail()
 def test_struct_with_line_pp():
     test_input = r"""
 struct _on_exit_args {
@@ -2324,7 +2330,7 @@ def test_struct_empty(test_input: str, expected: c_ast.AST):
         ),
     ],
 )
-def test_tags_namespace(test_input: str, index: Union[int, slice], expected: Union[c_ast.AST, List[c_ast.AST]]):
+def test_tags_namespace(test_input: str, index: Union[int, slice], expected: Union[c_ast.AST, list[c_ast.AST]]):
     """Tests that the tags of structs/unions/enums reside in a separate namespace and
     can be named after existing types.
     """
@@ -2466,7 +2472,7 @@ def test_invalid_typedef_storage_qual_error():
         ),
     ],
 )
-def test_duplicate_typedef(test_input: str, expected: List[c_ast.AST]):
+def test_duplicate_typedef(test_input: str, expected: list[c_ast.AST]):
     """Tests that redeclarations of existing types are parsed correctly. This is non-standard, but allowed by many
     compilers.
     """
@@ -3086,14 +3092,17 @@ void main() {
     assert c_ast.compare_asts(tree.ext[0].body.block_items, expected_list)
 
 
-# =====================================================================================================================
+# endregion
 
-# ==== Testing of parsing whole chunks of code.
 
+# ========
+# region ---- Parsing whole chunks of code
+#
 # Since we don't want to rely on the structure of ASTs too much, most of these tests are implemented with walk().
+# ========
 
 
-def match_constants(code: Union[str, c_ast.AST], constants: List[str]) -> bool:
+def match_constants(code: Union[str, c_ast.AST], constants: list[str]) -> bool:
     """Check that the list of all Constant values (by 'preorder' appearance) in the chunk of code is as given."""
 
     tree = parse(code) if isinstance(code, str) else code
@@ -3109,7 +3118,7 @@ def match_number_of_id_refs(code: Union[str, c_ast.AST], name: str, num: int) ->
     return sum(1 for node in c_ast.walk(tree) if isinstance(node, c_ast.Id) and node.name == name) == num
 
 
-def match_number_of_node_instances(code: Union[str, c_ast.AST], type: Type[c_ast.AST], num: int) -> None:  # noqa: A002
+def match_number_of_node_instances(code: Union[str, c_ast.AST], type: type[c_ast.AST], num: int) -> None:  # noqa: A002
     """Check that the amount of klass nodes in the code is the expected number."""
 
     tree = parse(code) if isinstance(code, str) else code
@@ -3139,7 +3148,7 @@ def match_number_of_node_instances(code: Union[str, c_ast.AST], type: Type[c_ast
         ),
     ],
 )
-def test_expressions_constants(test_input: str, expected: List[str]) -> None:
+def test_expressions_constants(test_input: str, expected: list[str]) -> None:
     tree = parse(test_input)
     assert match_constants(tree, expected)
 
@@ -3158,7 +3167,7 @@ def test_expressions_constants(test_input: str, expected: List[str]) -> None:
         )
     ],
 )
-def test_expressions_id_refs(test_input: str, expected: List[Tuple[str, int]]):
+def test_expressions_id_refs(test_input: str, expected: list[tuple[str, int]]):
     tree = parse(test_input)
     for id_, num in expected:
         assert match_number_of_id_refs(tree, id_, num)
@@ -3245,9 +3254,9 @@ void x(void) {
 )
 def test_statements(
     test_input: str,
-    expected_constants: List[str],
-    expected_id_ref_counts: List[Tuple[str, int]],
-    expected_node_instance_counts: List[Tuple[Type[c_ast.AST], int]],
+    expected_constants: list[str],
+    expected_id_ref_counts: list[tuple[str, int]],
+    expected_node_instance_counts: list[tuple[type[c_ast.AST], int]],
 ):
     tree = parse(test_input)
 
@@ -3466,9 +3475,12 @@ def test_whole_file_with_stdio():
     assert test_input.ext[-8].name == "cookie_io_functions_t"
 
 
-# =====================================================================================================================
+# endregion
 
-# ==== Test issues related to the typedef-name problem.
+
+# ========
+# region ---- Issues related to typedef-name problem.
+# ========
 
 
 def test_innerscope_typedef():
@@ -3901,3 +3913,8 @@ typedef char TT;
 
     with pytest.raises(CParseError):
         parse(test_input_2)
+
+
+# endregion
+
+# endregion

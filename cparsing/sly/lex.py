@@ -43,7 +43,7 @@ __all__ = ("Lexer", "LexerStateChange")
 
 
 # ============================================================================
-# region -------- Exceptions
+# region -------- Exceptions --------
 # ============================================================================
 
 
@@ -135,6 +135,11 @@ class _Before:
         self.pattern = pattern
 
 
+# ============================================================================
+# region -------- Lexer --------
+# ============================================================================
+
+
 class LexerMetaDict(dict[str, Any]):
     """Special dictionary that prohibits duplicate definitions in lexer specifications."""
 
@@ -174,15 +179,15 @@ class LexerMetaDict(dict[str, Any]):
         raise KeyError
 
 
-def _under_decorator(pattern: str, *extra: str) -> Callable[[CallableT], CallableT]:
+def _match_action_decorator(pattern: str, *extra: str) -> Callable[[CallableT], CallableT]:
     patterns = [pattern, *extra]
 
     def decorate(func: CallableT) -> CallableT:
         pattern = "|".join(f"({pat})" for pat in patterns)
         if hasattr(func, "pattern"):
-            func.pattern = f"{pattern}|{func.pattern}"  # type: ignore # Runtime attribute access and assignment.
+            func.pattern = f"{pattern}|{func.pattern}"  # pyright: ignore # Runtime attribute access and assignment.
         else:
-            func.pattern = pattern  # type: ignore # Runtime attribute assignment.
+            func.pattern = pattern  # pyright: ignore # Runtime attribute assignment.
         return func
 
     return decorate
@@ -199,7 +204,7 @@ class LexerMeta(type):
     @classmethod
     def __prepare__(cls, clsname: str, bases: tuple[type, ...], **kwds: object) -> LexerMetaDict:
         namespace = LexerMetaDict()
-        namespace["_"] = _under_decorator
+        namespace["_"] = _match_action_decorator
         namespace["before"] = _Before
         return namespace
 
@@ -374,8 +379,6 @@ class Lexer(metaclass=LexerMeta):
             return
 
         # Form the master regular expression
-        # previous = ("|" + cls._master_re.pattern) if cls._master_re else ""
-        # cls._master_re = cls.regex_module.compile("|".join(parts) + previous, cls.reflags)
         cls._master_re = cls.regex_module.compile("|".join(parts), cls.reflags)
 
         # Verify that that ignore and literals specifiers match the input type
@@ -519,5 +522,8 @@ class Lexer(metaclass=LexerMeta):
     def error(self, t: Token) -> Any:
         """Default implementation of the error handler. May be changed in subclasses."""
 
-        assert isinstance(self.index, int)  # pyright: ignore [reportUnknownMemberType] Should always be true at runtime.
+        assert isinstance(self.index, int)  # pyright: ignore Should always be true at runtime.
         raise LexError(f"Illegal character {t.value[0]!r} at index {self.index}", t.value, self.index)
+
+
+# endregion
