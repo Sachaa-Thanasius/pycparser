@@ -994,7 +994,7 @@ class CParser(Parser):
         # None means no list of members
         return klass(name=p[1], decls=None, coord=Coord.from_literal(p, p.struct_or_union))
 
-    @_('struct_or_union LBRACE struct_declaration { struct_declaration } RBRACE')
+    @_("struct_or_union LBRACE struct_declaration { struct_declaration } RBRACE")
     def struct_or_union_specifier(self, p: Any):
         klass = c_ast.Struct if (p.struct_or_union == "struct") else c_ast.Union
         # Empty sequence means an empty list of members
@@ -1008,8 +1008,8 @@ class CParser(Parser):
         return klass(name=None, decls=decls, coord=coord)
 
     @_(
-        'struct_or_union ID LBRACE struct_declaration { struct_declaration } RBRACE',
-        'struct_or_union TYPEID LBRACE struct_declaration { struct_declaration } RBRACE',
+        "struct_or_union ID LBRACE struct_declaration { struct_declaration } RBRACE",
+        "struct_or_union TYPEID LBRACE struct_declaration { struct_declaration } RBRACE",
     )
     def struct_or_union_specifier(self, p: Any):
         klass = c_ast.Struct if (p.struct_or_union == "struct") else c_ast.Union
@@ -1094,13 +1094,13 @@ class CParser(Parser):
     def enum_specifier(self, p: Any):
         return c_ast.Enum(p[1], None, coord=Coord.from_literal(p, p.ENUM))
 
-    @_('ENUM LBRACE enumerator_list RBRACE')
+    @_("ENUM LBRACE enumerator_list RBRACE")
     def enum_specifier(self, p: Any):
         return c_ast.Enum(None, p.enumerator_list, coord=Coord.from_literal(p, p.ENUM))
 
     @_(
-        'ENUM ID LBRACE enumerator_list RBRACE',
-        'ENUM TYPEID LBRACE enumerator_list RBRACE',
+        "ENUM ID LBRACE enumerator_list RBRACE",
+        "ENUM TYPEID LBRACE enumerator_list RBRACE",
     )
     def enum_specifier(self, p: Any):
         return c_ast.Enum(p[1], p.enumerator_list, coord=Coord.from_literal(p, p.ENUM))
@@ -1380,7 +1380,7 @@ class CParser(Parser):
         return p.assignment_expression
 
     @_(
-        'LBRACE [ initializer_list ] RBRACE',
+        "LBRACE [ initializer_list ] RBRACE",
         'LBRACE initializer_list "," RBRACE',
     )
     def initializer(self, p: Any):
@@ -1525,7 +1525,7 @@ class CParser(Parser):
         else:
             return [item]
 
-    @_('LBRACE { block_item } RBRACE')
+    @_("LBRACE { block_item } RBRACE")
     def compound_statement(self, p: Any):
         """Handle a compound statement.
 
@@ -1760,8 +1760,8 @@ class CParser(Parser):
     @_(
         'postfix_expression "." ID',
         'postfix_expression "." TYPEID',
-        'postfix_expression ARROW ID',
-        'postfix_expression ARROW TYPEID',
+        "postfix_expression ARROW ID",
+        "postfix_expression ARROW TYPEID",
     )
     def postfix_expression(self, p: Any):
         field = c_ast.Id(p[2], coord=Coord.from_literal(p, p[2]))

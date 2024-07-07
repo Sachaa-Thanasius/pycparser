@@ -67,10 +67,12 @@ if TYPE_CHECKING:
     class _RuleDecorator(Protocol):
         def __call__(self, rule: str, *extras: str) -> Callable[[CallableT], CallableT]: ...
 
+    @type_check_only
     class _SubstitutionDecorator(Protocol):
         def __call__(self, sub: dict[str, str], *extras: dict[str, str]) -> Callable[[CallableT], CallableT]: ...
 
-    # Typing hack to account for `_` and `subst` existing in a sly.Lexer or sly.Parser class's namespace only during
-    # class creation. Should only ever be imported within an `if TYPE_CHECKING` block.
+    # Typing hack to account for `_` existing in a sly.Lexer or sly.Parser subclass's namespace (and `subst` in a
+    # sly.Parser subclass's namespace only during class creation.
+    # Should only ever be imported within an `if TYPE_CHECKING` block.
     _ = cast(_RuleDecorator, object())
     subst = cast(_SubstitutionDecorator, object())

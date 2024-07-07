@@ -8,12 +8,12 @@ from cparsing.c_parser import CParseError
 from cparsing.utils import Coord
 
 # ============================================================================
-# region -------- Helpers.
+# region -------- Helpers
 # ============================================================================
 
-SAMPLE_CFILES_PATH = Path().resolve(strict=True) / "tests" / "c_files"
-
 _MISSING: Any = object()
+
+SAMPLE_CFILES_PATH = Path().resolve(strict=True) / "tests" / "c_files"
 
 
 def DeclWithDefaults(
@@ -45,7 +45,7 @@ def DeclWithDefaults(
 # endregion
 
 # ============================================================================
-# region -------- Actual tests.
+# region -------- Tests
 # ============================================================================
 
 # ========

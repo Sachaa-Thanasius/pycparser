@@ -237,7 +237,7 @@ class CLexer(Lexer):
     U16STRING_LITERAL = "u" + STRING_LITERAL
     U32STRING_LITERAL = "U" + STRING_LITERAL
 
-    @_('"' + _string_char + '*' + _bad_escape + _string_char + '*"')
+    @_('"' + _string_char + "*" + _bad_escape + _string_char + '*"')
     def BAD_STRING_LITERAL(self, t: Token) -> NoReturn:
         self.error(t, "String contains invalid escape code")
 

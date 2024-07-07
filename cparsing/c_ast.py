@@ -830,7 +830,7 @@ class _Unparser(NodeVisitor):
     def is_simple_node(node: AST) -> TypeGuard[_SimpleNode]:
         return isinstance(node, (Constant, Id, ArrayRef, StructRef, FuncCall))
 
-    def generic_visit(self, node: Optional[AST]) -> TUnion[Generator[AST, Any, None], Literal['']]:
+    def generic_visit(self, node: Optional[AST]) -> TUnion[Generator[AST, Any, None], Literal[""]]:
         if node is None:
             return ""
         else:

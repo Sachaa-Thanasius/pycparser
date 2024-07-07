@@ -33,12 +33,14 @@ void foo(int TT){
 
 def check_og(source: str) -> Any:
     print("-- Parsing with OG...\n")
+
     parser = OGParser()
-    return parser.parse(source)
+    return parser.parse(source)  # type: ignore
 
 
 def check_new(source: str) -> Any:
     print("-- Parsing with New...\n")
+
     scope_stack: ChainMap[str, bool] = ChainMap()
     lexer = CLexer(scope_stack)
     parser = CParser(scope_stack)

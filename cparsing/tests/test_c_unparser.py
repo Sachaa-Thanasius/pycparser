@@ -1,10 +1,15 @@
 import platform
 from pathlib import Path
-from typing import Literal, Tuple
+from typing import Literal
 
 import pytest
 
 from cparsing import c_ast, parse, parse_file
+
+# ============================================================================
+# region -------- Helpers
+# ============================================================================
+
 
 SAMPLE_CFILES_PATH = Path("./tests/c_files").resolve(strict=True)
 
@@ -17,7 +22,7 @@ def cpp_path() -> Literal["gcc", "cpp"]:
     return "cpp"
 
 
-def cpp_args(args: Tuple[str, ...] = ()) -> Tuple[str, ...]:
+def cpp_args(args: tuple[str, ...] = ()) -> tuple[str, ...]:
     """Turn args into a suitable format for passing to cpp."""
 
     if platform.system() == "Darwin":
@@ -38,9 +43,12 @@ def assert_is_c_to_c_correct(src: str, *, reduce_parentheses: bool = False):
     assert c_ast.compare_asts(parse(src), parse(reparsed_src))
 
 
-# =====================================================================================================================
+# endregion
 
-# ======== Test C to C.
+
+# ============================================================================
+# region -------- Tests
+# ============================================================================
 
 
 @pytest.mark.parametrize(
@@ -419,7 +427,7 @@ def test_atomic_qual(test_input: str, expected_reparsed_input: str):
     assert_is_c_to_c_correct(test_input)
 
     # TODO: Regeneration with multiple qualifiers is not fully supported.
-    # REF: https://github.com/eliben/pycparser/issues/433
+    # Ref: https://github.com/eliben/pycparser/issues/433
     # assert is_c_to_c_correct('auto const _Atomic(int *) a;')
 
 
@@ -444,7 +452,7 @@ def test_reduce_parentheses_binaryops():
     ],
 )
 def test_minimum_parentheses_binaryops(test_input: str):
-    # codes with minimum number of (necessary) parenthesis:
+    # code snippets with minimum number of (necessary) parenthesis
     assert_is_c_to_c_correct(test_input, reduce_parentheses=True)
     reparsed_source = convert_c_to_c(test_input, reduce_parentheses=True)
     assert reparsed_source.count("(") == test_input.count("(")
@@ -490,3 +498,6 @@ def test_to_type_with_cpp():
 )
 def test_nested_else_if_line_breaks(test_tree: c_ast.AST, expected: str):
     assert c_ast.unparse(test_tree) == expected
+
+
+# endregion

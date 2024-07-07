@@ -55,7 +55,7 @@ def pytest_assertrepr_compare(config: pytest.Config, op: str, left: object, righ
     return None
 
 
-def _get_ast_diff(left: c_ast.AST, right: c_ast.AST):
+def _get_ast_diff(left: c_ast.AST, right: c_ast.AST) -> list[str]:
     left_dump = c_ast.dump(left, indent=4).splitlines()
     right_dump = c_ast.dump(right, indent=4).splitlines()
     return list(_differ.compare(left_dump, right_dump))
