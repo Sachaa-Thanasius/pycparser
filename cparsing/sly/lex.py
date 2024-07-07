@@ -33,7 +33,7 @@
 
 import re
 from collections.abc import Generator
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, Optional
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, Optional, Union
 
 from cparsing._typing_compat import CallableT, Self
 
@@ -97,12 +97,11 @@ class Token:
 
     __slots__ = ("type", "value", "lineno", "index", "end")
 
-    if TYPE_CHECKING:
-        type: str
-        value: str
-        lineno: int
-        index: int
-        end: int
+    type: str
+    value: str
+    lineno: int
+    index: int
+    end: int
 
     def __repr__(self) -> str:
         return (
@@ -193,12 +192,12 @@ class LexerMeta(type):
     """Metaclass for collecting lexing rules."""
 
     if TYPE_CHECKING:
-        _rules: list[tuple[str, Any]]
+        _rules: list[tuple[str, Union[str, Callable[["Lexer", Token], Optional[Token]]]]]
         _attributes: dict[str, Any]
         _before: dict[str, str]
 
     @classmethod
-    def __prepare__(cls, name: str, bases: tuple[type, ...], **kwds: object) -> LexerMetaDict:
+    def __prepare__(cls, clsname: str, bases: tuple[type, ...], **kwds: object) -> LexerMetaDict:
         namespace = LexerMetaDict()
         namespace["_"] = _under_decorator
         namespace["before"] = _Before
@@ -209,7 +208,7 @@ class LexerMeta(type):
         del namespace["before"]
 
         # Create attributes for use in the actual class body
-        real_namespace = {str(key): str(val) if isinstance(val, TokenStr) else val for key, val in namespace.items()}
+        real_namespace = {str(key): (str(val) if isinstance(val, TokenStr) else val) for key, val in namespace.items()}
         return super().__new__(cls, clsname, bases, real_namespace, **kwds)
 
     def __init__(self, clsname: str, bases: tuple[type, ...], namespace: LexerMetaDict, **kwds: object) -> None:
@@ -228,13 +227,19 @@ class LexerMeta(type):
 class Lexer(metaclass=LexerMeta):
     # These attributes may be redefined in subclasses.
     tokens: ClassVar[set[str]] = set()
+    """Set of token names. This is always required."""
+
     literals: ClassVar[set[str]] = set()
+    """Characters serving as tokens that are always returned "as is"."""
+
     ignore: str = ""
+    """String containing ignored characters (i.e. between tokens)."""
+
     reflags: int = 0
     regex_module = re
 
     _token_names: ClassVar[set[str]] = set()
-    _token_funcs: ClassVar[dict[str, Callable[["Lexer", Token], Any]]] = {}
+    _token_funcs: ClassVar[dict[str, Callable[["Lexer", Token], Optional[Token]]]] = {}
     _ignored_tokens: ClassVar[set[str]] = set()
     _remapping: ClassVar[dict[str, dict[str, str]]] = {}
     _delete: ClassVar[list[str]] = []
@@ -253,11 +258,9 @@ class Lexer(metaclass=LexerMeta):
         There are a few things that govern this:
 
         1.  Any definition of the form `NAME = str` is a token if `NAME` is
-            is defined in the tokens set.
-
+            defined in the tokens set.
         2.  Any definition of the form `ignore_NAME = str` is a rule for an ignored
             token.
-
         3.  Any function defined with a `.pattern` attribute is treated as a rule.
             Such functions can be created with the `@_` decorator or by defining
             function with the same name as a previously defined string.
@@ -348,7 +351,9 @@ class Lexer(metaclass=LexerMeta):
 
             elif callable(value):
                 cls._token_funcs[tokname] = value
-                pattern = value.pattern
+                pattern = value.pattern  # pyright: ignore [reportFunctionMemberAccess]
+            else:
+                raise LexerBuildError(f"{value!r} is not a valid rule; it should be a string or a callable.")
 
             # Form the regular expression component
             part = f"(?P<{tokname}>{pattern})"
@@ -408,7 +413,7 @@ class Lexer(metaclass=LexerMeta):
         _ignored_tokens: set[str] = _MISSING
         _master_re: re.Pattern[str] = _MISSING
         _ignore: str = _MISSING
-        _token_funcs: dict[str, Callable[[Lexer, Token], Any]] = _MISSING
+        _token_funcs: dict[str, Callable[[Lexer, Token], Optional[Token]]] = _MISSING
         _literals: set[str] = _MISSING
         _remapping: dict[str, dict[str, str]] = _MISSING
 

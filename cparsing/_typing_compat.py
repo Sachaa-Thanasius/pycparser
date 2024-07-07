@@ -9,7 +9,7 @@ if sys.version_info >= (3, 9, 2):  # noqa: UP036 # Users might still be on 3.9.0
 elif TYPE_CHECKING:
 
     class _GenericAlias:
-        def __init__(self, *args: object, **kwargs: object):
+        def __init__(self, *args: object, **kwargs: object) -> None:
             pass
 
 else:
@@ -20,7 +20,7 @@ __all__ = ("NotRequired", "Self", "TypeGuard", "TypeAlias")
 
 
 class _PlaceholderGenericAlias(_GenericAlias):
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<placeholder for {super().__repr__()}>"
 
 
@@ -28,7 +28,7 @@ class _PlaceholderMeta(type):
     def __getitem__(self, item: object) -> _PlaceholderGenericAlias:
         return _PlaceholderGenericAlias(self, item)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<placeholder for {super().__repr__()}>"
 
 
@@ -67,6 +67,6 @@ if TYPE_CHECKING:
     class _RuleDecorator(Protocol):
         def __call__(self, rule: str, *extras: str) -> Callable[[CallableT], CallableT]: ...
 
-    # Typing hack to account for `_` existing in a sly.Lexer or sly.Parser class's namespace only during class creation.
-    # Should only ever be imported within an `if TYPE_CHECKING` block.
+    # Typing hack to account for `_` existing in a sly.Lexer or sly.Parser class's namespace only during class
+    # creation. Should only ever be imported within an `if TYPE_CHECKING` block.
     _ = cast(_RuleDecorator, object())

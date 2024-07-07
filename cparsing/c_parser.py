@@ -517,7 +517,7 @@ class CParser(Parser):
 
     # endregion
 
-    precedence = (  # type: ignore
+    precedence = (
         ("left", LOR),
         ("left", LAND),
         ("left", OR),

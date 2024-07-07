@@ -70,6 +70,7 @@ extend-ignore = [
     "RET506",
     "RET507",
     "ERA001", # Leave commented code alone.
+    "RUF002", # Leave my en dashes alone.
 ]
 unfixable = [
     "ERA", # Prevent unlikely erroneous deletion.
@@ -78,6 +79,9 @@ unfixable = [
 [tool.ruff.lint.per-file-ignores]
 "**/__init__.py" = [
     "F403", # Ruff doesn't understand using star imports to export names in a package.
+]
+"cparsing/sly/yacc.py" = [
+    "E741", # Ambiguous names? No, math names.
 ]
 "cparsing/c_lexer.py" = [
     "RUF012", # Mutable class attributes.

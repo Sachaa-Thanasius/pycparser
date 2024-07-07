@@ -33,6 +33,7 @@
 
 import inspect
 import sys
+import threading
 from collections import defaultdict
 from collections.abc import Callable, Collection, Generator, Iterator, Sequence
 from typing import TYPE_CHECKING, Any, ClassVar, Optional, TextIO, Union, cast
@@ -50,7 +51,6 @@ __all__ = ("Parser",)
 # Move these parameters to the Yacc class itself.
 # ============================================================================
 
-ERROR_COUNT: int = 3  # Number of symbols that must be shifted to leave recovery mode
 MAXINT: int = sys.maxsize
 
 # endregion
@@ -89,8 +89,6 @@ class SlyLogger:
 class YaccSymbol:
     """This class is used to hold non-terminal grammar symbols during parsing.
 
-    Instances *usually* have the documented attributes.
-
     Attributes
     ----------
     type: str
@@ -98,18 +96,26 @@ class YaccSymbol:
     value: Any
         Symbol value.
     lineno: int
-        Starting line number.
+        Starting line number. May not exist.
     index: int
-        Starting lex position.
+        Starting lex position. May not exist.
     end: int | None
         May not exist.
+
+    Notes
+    -----
+    Instances *usually* have the documented attributes, but only the `type` and `value` attributes are guaranteed to
+    exist.
+
+    Also, this is meant be mostly duck type–compatible with `lex.Token`.
     """
 
+    type: str
+    value: Any
+
     if TYPE_CHECKING:
-        type: str
-        value: Any
-        lineno: int
-        index: int
+        lineno: Optional[int]
+        index: Optional[int]
         end: Optional[int]
 
     def __str__(self) -> str:
@@ -136,7 +142,7 @@ class YaccProduction:
 
     def __init__(self, s: list[YaccSymbol], stack: Optional[list[YaccSymbol]] = None) -> None:
         self._slice = s
-        self._namemap: dict[str, Any] = {}
+        self._namemap: dict[str, Callable[[list[YaccSymbol]], Any]] = {}
         self._stack = stack
 
     @property
@@ -307,7 +313,7 @@ class Production:
 
         # Now, walk through the names and generate accessor functions
         nameuse: defaultdict[str, int] = defaultdict(int)
-        namemap: dict[int, Callable[[object], object]] = {}
+        namemap: dict[str, Callable[[list[YaccSymbol]], object]] = {}
         for index, key in enumerate(self.prod):
             if namecount[key] > 1:
                 k = f"{key}{nameuse[key]}"
@@ -390,14 +396,14 @@ class LRItem:
     name: str
         Name of the production, e.g. "expr".
     prod: Sequence[str]
-        A list of symbols on the right side ["expr",".","PLUS","term"].
+        A list of symbols on the right side ["expr", ".", "PLUS", "term"].
     number: int
         Production number.
     lr_next: LRItem | None
         Next LR item. Example: If we are "expr -> expr . PLUS term", then lr_next refers to "expr -> expr PLUS . term".
     lr_index: int
         LR item index (location of the ".") in the prod list.
-    lookaheads: dict
+    lookaheads: dict[int, list[str]]
         LALR lookahead symbols for this item.
     len: int
         Length of the production (number of symbols on right hand side).
@@ -413,13 +419,13 @@ class LRItem:
         lr_before: Optional[str]
 
     def __init__(self, p: Production, n: int) -> None:
-        self.name = p.name
-        self.prod = (*p.prod[:n], ".", *p.prod[n:])
-        self.number = p.number
-        self.lr_index = n
-        self.lookaheads: dict[int, str] = {}
-        self.len = len(self.prod)
-        self.usyms = p.usyms
+        self.name: str = p.name
+        self.prod: tuple[str, ...] = (*p.prod[:n], ".", *p.prod[n:])
+        self.number: int = p.number
+        self.lr_index: int = n
+        self.lookaheads: dict[int, list[str]] = {}
+        self.len: int = len(self.prod)
+        self.usyms: list[str] = p.usyms
 
     def __str__(self) -> str:
         if self.prod:
@@ -506,7 +512,7 @@ class Grammar:
         Raises
         ------
         RuntimeError
-            If `set_precedence()` was called before `add_production()`.
+            If `set_precedence` was called before `add_production`.
         GrammarError
             If the precedence has already been specified for `term`, or if `assoc` isn't a valid associativity value.
         """
@@ -542,6 +548,8 @@ class Grammar:
         syms: list[str]
             The list of symbols representing the production, e.g. ["expr", "PLUS", "term"] for the rule
             "expr : expr PLUS term".
+        func: Callable[..., Any], optional
+            The action function. Defaults to None.
 
         Raises
         ------
@@ -619,6 +627,8 @@ class Grammar:
     def set_start(self, start: Optional[Union[Callable[..., Any], str]] = None) -> None:
         """Sets the starting symbol and creates the augmented grammar.
 
+        Extended Summary
+        ----------------
         Production rule 0 is "S' -> start" where `start` is the start symbol.
         """
 
@@ -977,12 +987,12 @@ class Grammar:
 # ============================================================================
 
 
-def digraph(
-    X: list[tuple[int, str]],
-    R: Callable[[tuple[int, str]], list[str]],
-    FP: Callable[[tuple[int, str]], list[tuple[int, str]]],
-) -> dict:
-    """Helper for computing set valued functions of the form `F(x) = F'(x) U U{F(y) | x R y}`.
+_RelationFunction: TypeAlias = Callable[[tuple[int, str]], list[tuple[int, str]]]
+_SetValuedFunction: TypeAlias = Callable[[tuple[int, str]], list[str]]
+
+
+def digraph(X: list[tuple[int, str]], R: _RelationFunction, FP: _SetValuedFunction) -> dict[tuple[int, str], list[str]]:
+    """First helper for computing set valued functions of the form `F(x) = F'(x) U U{F(y) | x R y}`.
 
     Extended Summary
     ----------------
@@ -992,15 +1002,19 @@ def digraph(
     ----------
     X: list[tuple[int, str]]
         An input set.
-    R: Callable[[tuple[int, str]], list[str]]
+    R: _RelationFunction
         A relation.
-    FP: Callable[[tuple[int, str]], list[tuple[int, str]]]
+    FP: _SetValuedFunction
         Set-valued function.
+
+    See Also
+    --------
+    traverse
     """
 
     N = dict.fromkeys(X, 0)
-    stack = []
-    F = {}
+    stack: list[tuple[int, str]] = []
+    F: dict[tuple[int, str], list[str]] = {}
     for x in X:
         if N[x] == 0:
             traverse(x, N, stack, F, X, R, FP)
@@ -1011,16 +1025,20 @@ def traverse(
     x: tuple[int, str],
     N: dict[tuple[int, str], int],
     stack: list[tuple[int, str]],
-    F: dict,
+    F: dict[tuple[int, str], list[str]],
     X: list[tuple[int, str]],
-    R: Callable[[tuple[int, str]], list[str]],
-    FP: Callable[[tuple[int, str]], list[tuple[int, str]]],
+    R: _RelationFunction,
+    FP: _SetValuedFunction,
 ) -> None:
-    """Helper for computing set valued functions of the form `F(x) = F'(x) U U{F(y) | x R y}`.
+    """Second helper for computing set valued functions of the form `F(x) = F'(x) U U{F(y) | x R y}`.
 
     Extended Summary
     ----------------
     This is used to compute the values of Read() sets as well as FOLLOW sets in LALR(1) generation.
+
+    See Also
+    --------
+    digraph
     """
 
     stack.append(x)
@@ -1061,9 +1079,12 @@ class LRTable:
         self.lr_goto: dict[int, dict[str, int]] = {}  # Goto table
         self.lr_productions = grammar.Productions  # Copy of grammar Production array
         # Cache of computed gotos
-        self.lr_goto_cache: dict[Union[tuple[int, str], str], dict[Union[int, str], list[LRItem]]] = {}
+        self.lr_goto_cache: dict[
+            Union[tuple[int, str], str],
+            Union[list[LRItem], dict[Union[int, str], list[LRItem]]],
+        ] = {}
         self.lr0_cidhash: dict[int, int] = {}  # Cache of closures
-        self._add_count: int = 0  # Internal counter used to detect cycles
+        self._add_count = 0  # Internal counter used to detect cycles
 
         # Diagonistic information filled in by the table generator
         self.state_descriptions: dict[int, str] = {}
@@ -1095,7 +1116,13 @@ class LRTable:
                 self.defaulted_states[state] = rules[0]
 
     def lr0_closure(self, I: list[LRItem]) -> list[LRItem]:
-        """Compute the LR(0) closure operation on I, where I is a set of LR(0) items."""
+        """Compute the LR(0) closure operation on a set of LR(0) items.
+
+        Parameters
+        ----------
+        I: list[LRItem]
+            A set of LR(0) items
+        """
 
         self._add_count += 1
 
@@ -1115,7 +1142,7 @@ class LRTable:
 
         return J
 
-    def lr0_goto(self, I: list[LRItem], x: str):
+    def lr0_goto(self, I: list[LRItem], x: str) -> Optional[list[LRItem]]:
         """Compute the LR(0) goto function goto(I,X) where I is a set of LR(0) items and X is a grammar symbol.
 
         Notes
@@ -1126,30 +1153,30 @@ class LRTable:
         """
 
         # First we look for a previously cached entry
-        g = self.lr_goto_cache.get((id(I), x))
-        if g:
+        try:
+            g = self.lr_goto_cache[(id(I), x)]
+        except KeyError:
+            pass
+        else:
+            assert isinstance(g, (list, type(None)))
             return g
 
         # Now we generate the goto set in a way that guarantees uniqueness of the result
-        s = self.lr_goto_cache.get(x)
-        if not s:
-            self.lr_goto_cache[x] = s = {}
+        s = self.lr_goto_cache.setdefault(x, {})
+        assert isinstance(s, dict)
 
         gs: list[LRItem] = []
         for p in I:
             n = p.lr_next
             if n and n.lr_before == x:
-                s1 = s.get(id(n))
-                if not s1:
-                    s1 = {}
-                    s[id(n)] = s1
+                s = s.setdefault(id(n), {})
                 gs.append(n)
-                s = s1
+        assert isinstance(s, dict)
+
         g = s.get("$end")
         if not g:
             if gs:
-                g = self.lr0_closure(gs)
-                s["$end"] = g
+                s["$end"] = g = self.lr0_closure(gs)
             else:
                 s["$end"] = gs
         self.lr_goto_cache[(id(I), x)] = g
@@ -1162,8 +1189,7 @@ class LRTable:
 
         C = [self.lr0_closure([self.grammar.Productions[0].lr_next])]
 
-        for i, I in enumerate(C):
-            self.lr0_cidhash[id(I)] = i
+        self.lr0_cidhash.update({id(I): i for i, I in enumerate(C)})
 
         # Loop over the items in C and each grammar symbols
         i = 0
@@ -1172,7 +1198,7 @@ class LRTable:
             i += 1
 
             # Collect all of the symbols that could possibly be in the goto(I,X) sets
-            asyms: dict[str, None] = dict.fromkeys([s for ii in I for s in ii.usyms], None)
+            asyms: dict[str, None] = dict.fromkeys([s for ii in I for s in ii.usyms])
 
             for x in asyms:
                 g = self.lr0_goto(I, x)
@@ -1260,6 +1286,8 @@ class LRTable:
             Set of LR(0) items.
         trans: tuple[int, str]
             A tuple (state,N) where state is a number and N is a nonterminal symbol.
+        nullable: set[str]
+            Set of empty transitions.
 
         Returns
         -------
@@ -1271,6 +1299,7 @@ class LRTable:
         terms: list[str] = []
 
         g = self.lr0_goto(C[state], N)
+        assert g
         for p in g:
             if p.lr_index < p.len - 1:
                 a = p.prod[p.lr_index + 1]
@@ -1291,6 +1320,7 @@ class LRTable:
         state, N = trans
 
         g = self.lr0_goto(C[state], N)
+        assert g
         j = self.lr0_cidhash.get(id(g), -1)
         for p in g:
             if p.lr_index < p.len - 1:
@@ -1394,7 +1424,12 @@ class LRTable:
 
         return lookdict, includedict
 
-    def compute_read_sets(self, C: list[list[LRItem]], ntrans: list[tuple[int, str]], nullable: set[str]) -> dict:
+    def compute_read_sets(
+        self,
+        C: list[list[LRItem]],
+        ntrans: list[tuple[int, str]],
+        nullable: set[str],
+    ) -> dict[tuple[int, str], list[str]]:
         """Given a set of LR(0) items, this function computes the read sets.
 
         Parameters
@@ -1408,7 +1443,7 @@ class LRTable:
 
         Returns
         -------
-        F: dict
+        F: dict[tuple[int, str], list[str]]
             A set containing the read sets.
         """
 
@@ -1419,42 +1454,46 @@ class LRTable:
             return self.reads_relation(C, x, nullable)
 
         F = digraph(ntrans, R, FP)
-        return F
+        return F  # noqa: RET504
 
     def compute_follow_sets(
         self,
         ntrans: list[tuple[int, str]],
-        readsets,
+        readsets: dict[tuple[int, str], list[str]],
         inclsets: dict[tuple[int, str], list[tuple[int, str]]],
-    ) -> dict:
+    ) -> dict[tuple[int, str], list[str]]:
         """Given a set of LR(0) items, a set of non-terminal transitions, a readset, and an include set, this function
         computes the follow sets: Follow(p,A) = Read(p,A) U U {Follow(p',B) | (p,A) INCLUDES (p',B)}.
 
         Parameters
         ----------
-        ntrans
+        ntrans: list[tuple[int, str]]
             Set of nonterminal transitions.
-        readsets
+        readsets: dict[tuple[int, str], list[str]]
             Readset (previously computed).
-        inclsets: dict
+        inclsets: dict[tuple[int, str], list[tuple[int, str]]]
             Include sets (previously computed).
 
         Returns
         -------
-        F: dict
+        F: dict[tuple[int, str], list[str]]
             A set containing the follow sets.
         """
 
-        def FP(x):
+        def FP(x: tuple[int, str]) -> list[str]:
             return readsets[x]
 
         def R(x: tuple[int, str]) -> list[tuple[int, str]]:
             return inclsets.get(x, [])
 
         F = digraph(ntrans, R, FP)
-        return F
+        return F  # noqa: RET504
 
-    def add_lookaheads(self, lookbacks: dict[tuple[int, str], list[tuple[int, LRItem]]], followset: dict) -> None:
+    def add_lookaheads(
+        self,
+        lookbacks: dict[tuple[int, str], list[tuple[int, LRItem]]],
+        followset: dict[tuple[int, str], list[str]],
+    ) -> None:
         """Attaches the lookahead symbols to grammar rules.
 
         Extended Summary
@@ -1706,9 +1745,9 @@ def _collect_grammar_rules(func: Callable[..., Any]) -> list[_RawGrammarRule]:
         prodname = curr_func.__name__
         unwrapped = inspect.unwrap(curr_func)
         filename: str = unwrapped.__code__.co_filename
-        lineno: int = unwrapped.__code__.co_firstlineno
+        lineno_start: int = unwrapped.__code__.co_firstlineno
         func_rules = cast(list[str], curr_func.rules)  # pyright: ignore [reportFunctionMemberAccess]
-        for rule, lineno in zip(func_rules, range(lineno + len(func_rules) - 1, 0, -1)):
+        for rule, lineno in zip(func_rules, range(lineno_start + len(func_rules) - 1, 0, -1)):
             syms = rule.split()
             ebnf_prod: list[_RawGrammarRule] = []
             while ("{" in syms) or ("[" in syms):
@@ -1781,9 +1820,12 @@ def _replace_ebnf_choice(syms: list[str]) -> tuple[list[str], list[_RawGrammarRu
 _gencount = 0
 """Generate grammar rules for repeated items."""
 
+_gencount_lock = threading.Lock()
 
 _name_aliases: dict[str, list[str]] = {}
 """Dictionary mapping name aliases generated by EBNF rules."""
+
+_name_aliases_lock = threading.Lock()
 
 
 def _sanitize_symbols(symbols: list[str]) -> Generator[str]:
@@ -1819,15 +1861,18 @@ def _generate_repeat_rules(symbols: list[str]) -> tuple[str, list[_RawGrammarRul
             return [ p.symbols ]
     """
 
-    global _gencount
-    _gencount += 1
-    basename = f"_{_gencount}_" + "_".join(_sanitize_symbols(symbols))
+    with _gencount_lock:
+        global _gencount  # noqa: PLW0603
+        _gencount += 1
+        basename = f"_{_gencount}_" + "_".join(_sanitize_symbols(symbols))
+
     name = f"{basename}_repeat"
     oname = f"{basename}_items"
     iname = f"{basename}_item"
     symtext = " ".join(symbols)
 
-    _name_aliases[name] = symbols
+    with _name_aliases_lock:
+        _name_aliases[name] = symbols
 
     productions: list[_RawGrammarRule] = []
     _ = _under_decorator
@@ -1878,13 +1923,16 @@ def _generate_optional_rules(symbols: list[str]) -> tuple[str, list[_RawGrammarR
             return None
     """
 
-    global _gencount
-    _gencount += 1
-    basename = f"_{_gencount}_" + "_".join(_sanitize_symbols(symbols))
+    with _gencount_lock:
+        global _gencount  # noqa: PLW0603
+        _gencount += 1
+        basename = f"_{_gencount}_" + "_".join(_sanitize_symbols(symbols))
+
     name = f"{basename}_optional"
     symtext = " ".join(symbols)
 
-    _name_aliases[name] = symbols
+    with _name_aliases_lock:
+        _name_aliases[name] = symbols
 
     productions: list[_RawGrammarRule] = []
     _ = _under_decorator
@@ -1915,9 +1963,11 @@ def _generate_choice_rules(symbols: list[str]) -> tuple[str, list[_RawGrammarRul
             return p[0]
     """
 
-    global _gencount
-    _gencount += 1
-    basename = f"_{_gencount}_" + "_".join(_sanitize_symbols(symbols))
+    with _gencount_lock:
+        global _gencount  # noqa: PLW0603
+        _gencount += 1
+        basename = f"_{_gencount}_" + "_".join(_sanitize_symbols(symbols))
+
     name = f"{basename}_choice"
 
     _ = _under_decorator
@@ -1971,13 +2021,17 @@ class ParserMeta(type):
     def __new__(cls, clsname: str, bases: tuple[type, ...], namespace: ParserMetaDict, **kwds: object):
         del namespace["_"]
         self = super().__new__(cls, clsname, bases, namespace, **kwds)
-        self._build(list(namespace.items()))
+        self._build(list(namespace.items()))  # pyright: ignore # This method should always exist in Parser subclasses.
         return self
+
+
+_TupleOrListOfStr: TypeAlias = Union[list[str], tuple[str, ...]]
+_NestedTupleOrListOfStr: TypeAlias = Union[list[_TupleOrListOfStr], tuple[_TupleOrListOfStr, ...]]
 
 
 class Parser(metaclass=ParserMeta):
     track_positions: bool = True
-    """Automatic tracking of position information."""
+    """Whether position information is automatically tracked."""
 
     log = SlyLogger(sys.stderr)
     """Logging object where debugging/diagnostic messages are sent."""
@@ -1985,16 +2039,14 @@ class Parser(metaclass=ParserMeta):
     debugfile: Optional[str] = None
     """Debugging filename where parsetab.out data can be written."""
 
+    error_count: int = 3
+    """The number of symbols that must be shifted to leave recovery mode. Change to modify yacc's default behavior."""
+
     if TYPE_CHECKING:
         tokens: ClassVar[set[str]]
         """Lexing tokens. Must be manually assigned by the user."""
 
-        precedence: ClassVar[
-            Union[
-                list[Union[list[str], tuple[str, ...]]],
-                tuple[Union[list[str], tuple[str, ...]], ...],
-            ]
-        ]
+        precedence: ClassVar[_NestedTupleOrListOfStr]
         """Precedence setup. Not guaranteed to exist. Must be manually assigned by the user."""
 
     @classmethod
@@ -2045,9 +2097,8 @@ class Parser(metaclass=ParserMeta):
 
     @classmethod
     def __validate_specification(cls) -> bool:
-        """
-        Validate various parts of the grammar specification
-        """
+        """Validate various parts of the grammar specification."""
+
         if not cls.__validate_tokens():
             return False
         return cls.__validate_precedence()
@@ -2184,7 +2235,7 @@ class Parser(metaclass=ParserMeta):
             raise YaccError("Can't build parsing tables")
 
         if cls.debugfile:
-            with open(cls.debugfile, "w") as f:
+            with open(cls.debugfile, "w") as f:  # noqa: PTH123
                 f.write(str(cls._grammar))
                 f.write("\n")
                 f.write(str(cls._lrtable))
@@ -2193,7 +2244,7 @@ class Parser(metaclass=ParserMeta):
     # ----------------------------------------------------------------------
     # Parsing Support.  This is the parsing runtime that users use to
     # ----------------------------------------------------------------------
-    def error(self, token: Optional[Token]) -> None:
+    def error(self, token: Optional[Union[Token, YaccSymbol]]) -> None:
         """Default error handling function. This may be subclassed."""
 
         if token:
@@ -2224,7 +2275,7 @@ class Parser(metaclass=ParserMeta):
     def parse(self, tokens: Iterator[Token]) -> Any:
         """Parse the given input tokens."""
 
-        self.lookahead: Any = None  # Current lookahead symbol
+        self.lookahead: Optional[Union[Token, YaccSymbol]] = None  # Current lookahead symbol
         lookaheadstack: list[Any] = []  # Stack of lookahead symbols
         actions = self._lrtable.lr_action  # Local reference to action table (to avoid lookup on self.)
         goto = self._lrtable.lr_goto  # Local reference to goto table (to avoid lookup on self.)
@@ -2235,7 +2286,7 @@ class Parser(metaclass=ParserMeta):
         errorcount = 0  # Used during error recovery
 
         # Set up the state and symbol stacks
-        self.tokens = tokens
+        self.given_tokens = tokens
         statestack: list[int] = []  # Stack of parsing states
         self.statestack = statestack
         symstack: list[YaccSymbol] = []
@@ -2246,8 +2297,8 @@ class Parser(metaclass=ParserMeta):
         # Set up position tracking
         track_positions = self.track_positions
         if not hasattr(self, "_line_positions"):
-            self._line_positions: dict[int, int] = {}  # id: -> lineno
-            self._index_positions: dict[int, tuple[int, int]] = {}  # id: -> (start, end)
+            self._line_positions: dict[int, Optional[int]] = {}  # id: -> lineno
+            self._index_positions: dict[int, tuple[Optional[int], Optional[int]]] = {}  # id: -> (start, end)
 
         errtoken = None  # Err token
         while True:
@@ -2269,6 +2320,8 @@ class Parser(metaclass=ParserMeta):
                 t = actions[self.state].get(ltype)
             else:
                 t = defaulted_states[self.state]
+
+            assert self.lookahead
 
             if t is not None:
                 if t > 0:
@@ -2329,7 +2382,7 @@ class Parser(metaclass=ParserMeta):
                 if t == 0:
                     n = symstack[-1]
                     result = getattr(n, "value", None)
-                    return result
+                    return result  # noqa: RET504
 
             if t is None:
                 # We have some kind of parsing error here.  To handle
@@ -2343,7 +2396,7 @@ class Parser(metaclass=ParserMeta):
                 # first syntax error.  This function is only called if
                 # errorcount == 0.
                 if errorcount == 0 or self.errorok:
-                    errorcount = ERROR_COUNT
+                    errorcount = self.error_count
                     self.errorok = False
                     if self.lookahead.type == "$end":
                         errtoken = None  # End of file!
@@ -2364,7 +2417,7 @@ class Parser(metaclass=ParserMeta):
                             return None
                 else:
                     # Reset the error count.  Unsuccessful token shifted
-                    errorcount = ERROR_COUNT
+                    errorcount = self.error_count
 
                 # case 1:  the statestack only has 1 entry on it.  If we're in this state, the
                 # entire parse has been rolled back and we're completely hosed.   The token is
@@ -2416,8 +2469,8 @@ class Parser(metaclass=ParserMeta):
             raise RuntimeError("sly: internal parser error!!!\n")
 
     # Return position tracking information
-    def line_position(self, value: Any) -> int:
+    def line_position(self, value: Any) -> Optional[int]:
         return self._line_positions[id(value)]
 
-    def index_position(self, value: Any) -> tuple[int, int]:
+    def index_position(self, value: Any) -> tuple[Optional[int], Optional[int]]:
         return self._index_positions[id(value)]
