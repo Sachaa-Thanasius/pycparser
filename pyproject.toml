@@ -1,5 +1,62 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "cparsing"
+description = "An attempt to a pure-python C parser, made with sly. Based heavily on pycparser."
+version = "0.6.0"
+requires-python = ">=3.9"
+readme = "README.rst"
+license = "BSD-3-Clause"
+authors = [
+    { name = "Sachaa-Thanasius", email = "111999343+Sachaa-Thanasius@users.noreply.github.com" },
+]
+classifiers = [
+    "License :: OSI Approved :: BSD License",
+    "Natural Language :: English",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Typing :: Typed",
+]
+
+[project.urls]
+Homepage = "https://github.com/Sachaa-Thanasius/pycparser"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/cparsing"]
+
+
+# ---- Testing config
+
+[[tool.hatch.envs.hatch-test.matrix]]
+python = ["3.9", "3.10", "3.11", "3.12"]
+
+[tool.hatch.envs.hatch-test]
+extra-dependencies = ["covdefaults"]
+
+[tool.pytest.ini_options]
+addopts = ["--import-mode=importlib", "--strict-markers", "--strict-config"]
+
+[tool.coverage.run]
+plugins = ["covdefaults"]
+source = ["cparsing", "tests"]
+
+[tool.coverage.paths]
+cparsing = ["src"]
+
+[tool.coverage.report]
+exclude_lines = ["^\\s*(?:el)?if TYPE_CHECKING:$"]
+
+
+# ---- Linting config
+
 [tool.ruff]
-include = ["cparsing/**/*.py"]
+include = ["src/cparsing/*.py", "tests/*.py"]
 line-length = 120
 target-version = "py39"
 
@@ -37,11 +94,10 @@ select = [
     "RUF",
 ]
 extend-ignore = [
-    "S101",   # Use of assert here is a known quantity for typing cases.
+    "S101",   # Use of assert here is a known quantity for typing cases. Safe to optimize out.
     "SIM105", # Suppressable exception. contextlib.suppress is a stylistic choice with overhead.
     "C90",    # McCabe complexity.
     "PD011",  # Erroneous issue that triggers for any .values attribute access at all.
-    "S311",   # No need for cryptographically secure random number generation in this use case.
     "ANN101", # Type of Self for self is usually implicit and/or known by the type-checker.
     "ANN102", # Type of type[Self] for cls is usually implicit and/or known by the type-checker.
     "ANN204", # Special method return types are usually implicit and/or known by type checker.
@@ -49,7 +105,7 @@ extend-ignore = [
     "UP038",  # isinstance performs better with tuples than unions.
     "PT001",  # pytest recommends against empty parentheses on pytest.fixture.
     "PYI036", # Bug with annotations for __exit__.
-    "PLR",    # Complexity things.
+    "PLR",    # It's a parser generator; it's going to be complex.
     # Recommended by Ruff when using Ruff format.
     "E111",
     "E114",
@@ -60,59 +116,80 @@ extend-ignore = [
     "ISC001",
     "ISC002",
     # -- Project-specific rules.
-    # For strings in exception calls.
-    "TRY003",
-    "EM101",
-    "EM102",
-    "SIM108", # Don't always use ternary for readability.
-    # Allow else and elif after return, raise, and continue, for readability.
+    # Readability: Allow else and elif after return, raise, and continue.
     "RET505",
     "RET506",
     "RET507",
     "ERA001", # Leave commented code alone.
+    "SIM108", # Readability: Don't always shorten to ternary.
     "RUF002", # Leave my en dashes alone.
+    "PTH123", # Builtin open() is fine.
 ]
 unfixable = [
     "ERA", # Prevent unlikely erroneous deletion.
 ]
 
-[tool.ruff.lint.per-file-ignores]
-"**/__init__.py" = [
-    "F403", # Ruff doesn't understand using star imports to export names in a package.
-]
-"cparsing/sly/yacc.py" = [
-    "E741", # Ambiguous names? No, math names.
-]
-"cparsing/c_lexer.py" = [
-    "RUF012", # Mutable class attributes.
-    "F821",   # Undefined names are allowed because of metaclass hackery.
-]
-"cparsing/c_parser.py" = [
-    "ANN201", # Return annotations aren't helpful here.
-    "F811",   # Redefining methods is allowed because of metaclass hackery.
-    "F821",   # Undefined names are allowed because of metaclass hackery.
-    "S105",
-]
-"cparsing/c_ast.py" = [
-    "A002", # Allow some shadowing.
-]
-"cparsing/tests/*" = [
-    "T201",   # Allow printing.
-    "ANN201", # Allow lack of return annotations. Tests return None usually.
-    "ANN202",
-]
+typing-modules = ["src/cparsing/_typing_compat.py"]
 
 [tool.ruff.lint.pyupgrade]
 keep-runtime-typing = true
 
-[tool.ruff.format]
-quote-style = "preserve"
+[tool.ruff.lint.per-file-ignores]
+"**/__init__.py" = [
+    # Ruff doesn't understand using star imports to export names in a package.
+    "F403",
+    "F405",
+]
+"src/cparsing/c_ast.py" = [
+    "RUF012", # Mutable class attributes.
+]
+"src/cparsing/c_lexer.py" = [
+    "RUF012",
+    "F811",   # Redefining methods within Lexer/Parser subclasses is allowed because of metaclass hackery.
+    "F821",   # Undefined names within Lexer/Parser subclasses are allowed because of metaclass hackery.
+]
+"src/cparsing/c_parser.py" = [
+    # See reasoning above.
+    "RUF012",
+    "F811",
+    "F821",
+    "ANN201", # Allow lack of return annotations for public functions. Not helpful for production functions.
+]
+"tests/*.py" = [
+    # See reasoning above.
+    "RUF012",
+    "F811",
+    "F821",
+    "T201",   # Allow printing.
+    "ANN201", # Tests return None usually.
+]
+"examples/**/*.py" = [
+    # See reasoning above.
+    "RUF012",
+    "F811",
+    "F821",
+    "T201",
+    "ANN201",
+    "ANN001", # Ignore missing parameter annotations as well.
+    "INP001", # Implicit namespace packages.
+]
+
+
+# ---- Type-checking config
 
 [tool.pyright]
-include = ["cparsing"]
+include = ["src/cparsing"]
+ignore = ["tests"]
 pythonVersion = "3.9"
+pythonPlatform = "All"
 typeCheckingMode = "strict"
 
-reportPrivateUsage = "none"
-reportUnnecessaryIsInstance = "information"
+reportPrivateUsage = "none"                    # We're the package; of course we're accessing internals.
+reportUnnecessaryIsInstance = "none"           # Account for bad input from users.
+reportUninitializedInstanceVariable = "none"   # Occasionally nice as a checkup, but otherwise noisy.
+reportCallInDefaultInitializer = "warning"
+reportImplicitOverride = "warning"
+reportImportCycles = "none"
+reportPropertyTypeMismatch = "error"
+reportShadowedImports = "error"
 reportUnnecessaryTypeIgnoreComment = "warning"

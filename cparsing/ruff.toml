@@ -1,4 +1,0 @@
-extend = "../pyproject.toml"
-
-[format]
-quote-style = "double"
