@@ -1,16 +1,15 @@
 ===============
-cparser
+cparsing
 ===============
 
-An personal experiment, attempting to implement a pure-python C parser using sly. Much of this code is copied or modified from on [pycparser](https://github.com/eliben/pycparser).
+An personal experiment, attempting to implement a pure-python C parser using sly. Much of this code is copied or modified from `pycparser <https://github.com/eliben/pycparser>`_.
 
 Installation
 ------------
 
-This is a personal experiment, but if you must, it's available via pip::
+This is a personal experiment that's still a work in progress, but if you must, it should be available via pip::
 
-    $ pip install "colormath @ git+https://github.com/mikeshardmind/python-colormath"
-
+    $ pip install "cparsing @ git+https://github.com/Sachaa-Thanasius/pycparser@try-sly"
 
 Legal
 -----

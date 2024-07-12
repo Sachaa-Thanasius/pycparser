@@ -1,4 +1,4 @@
-"""An attempt at making a C parser with sly. Heavily based on pycparser, which uses ply."""
+"""A C parser made with sly. Heavily based on pycparser."""
 
 from .c_context import CContext, parse, parse_file, preprocess_file
 

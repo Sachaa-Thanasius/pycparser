@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "cparsing"
-description = "An attempt to a pure-python C parser, made with sly. Based heavily on pycparser."
-version = "0.6.0"
+description = "A pure-python C parser, made with sly. Based heavily on pycparser. A work in progress."
+version = "0.1.0"
 requires-python = ">=3.9"
 readme = "README.rst"
 license = "BSD-3-Clause"
@@ -13,6 +13,7 @@ authors = [
     { name = "Sachaa-Thanasius", email = "111999343+Sachaa-Thanasius@users.noreply.github.com" },
 ]
 classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
     "License :: OSI Approved :: BSD License",
     "Natural Language :: English",
     "Operating System :: OS Independent",
@@ -22,6 +23,9 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Typing :: Typed",
+]
+dependencies = [
+    "sly @ git+https://github.com/Sachaa-Thanasius/sly@modernization",
 ]
 
 [project.urls]
