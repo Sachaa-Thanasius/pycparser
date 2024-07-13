@@ -98,10 +98,9 @@ select = [
     "RUF",
 ]
 extend-ignore = [
-    "S101",   # Use of assert here is a known quantity for typing cases. Safe to optimize out.
+    "S101",   # Use of assert here is a known quantity for typing cases. All uses should be safe to optimize out.
     "SIM105", # Suppressable exception. contextlib.suppress is a stylistic choice with overhead.
     "C90",    # McCabe complexity.
-    "PD011",  # Erroneous issue that triggers for any .values attribute access at all.
     "ANN101", # Type of Self for self is usually implicit and/or known by the type-checker.
     "ANN102", # Type of type[Self] for cls is usually implicit and/or known by the type-checker.
     "ANN204", # Special method return types are usually implicit and/or known by type checker.
@@ -109,7 +108,7 @@ extend-ignore = [
     "UP038",  # isinstance performs better with tuples than unions.
     "PT001",  # pytest recommends against empty parentheses on pytest.fixture.
     "PYI036", # Bug with annotations for __exit__.
-    "PLR",    # It's a parser generator; it's going to be complex.
+    "PD011",  # Erroneous issue that triggers for any .values attribute access at all.
     # Recommended by Ruff when using Ruff format.
     "E111",
     "E114",
@@ -120,14 +119,15 @@ extend-ignore = [
     "ISC001",
     "ISC002",
     # -- Project-specific rules.
-    # Readability: Allow else and elif after return, raise, and continue.
-    "RET505",
-    "RET506",
-    "RET507",
+    "PLR",    # It's a C parser; it's going to be complex.
     "ERA001", # Leave commented code alone.
     "SIM108", # Readability: Don't always shorten to ternary.
     "RUF002", # Leave my en dashes alone.
     "PTH123", # Builtin open() is fine.
+    # Readability: Allow else and elif after return, raise, and continue.
+    "RET505",
+    "RET506",
+    "RET507",
 ]
 unfixable = [
     "ERA", # Prevent unlikely erroneous deletion.
@@ -138,26 +138,28 @@ typing-modules = ["src/cparsing/_typing_compat.py"]
 [tool.ruff.lint.pyupgrade]
 keep-runtime-typing = true
 
+[tool.ruff.lint.isort]
+lines-after-imports = 2
+
 [tool.ruff.lint.per-file-ignores]
 "**/__init__.py" = [
     # Ruff doesn't understand using star imports to export names in a package.
     "F403",
     "F405",
 ]
-"src/cparsing/c_ast.py" = [
-    "RUF012", # Mutable class attributes.
+"src/cparsing/c_*.py" = [
+    "RUF012", # Mutable class attributes; most use cases are cluegen-related and they should be safe.
 ]
 "src/cparsing/c_lexer.py" = [
-    "RUF012",
     "F811",   # Redefining methods within Lexer/Parser subclasses is allowed because of metaclass hackery.
     "F821",   # Undefined names within Lexer/Parser subclasses are allowed because of metaclass hackery.
+    "ANN201", # Allow missing return annotations for public functions. Not helpful for match action or production functions.
 ]
 "src/cparsing/c_parser.py" = [
     # See reasoning above.
-    "RUF012",
     "F811",
     "F821",
-    "ANN201", # Allow lack of return annotations for public functions. Not helpful for production functions.
+    "ANN201",
 ]
 "tests/*.py" = [
     # See reasoning above.
@@ -167,7 +169,7 @@ keep-runtime-typing = true
     "T201",   # Allow printing.
     "ANN201", # Tests return None usually.
 ]
-"examples/**/*.py" = [
+"examples/*.py" = [
     # See reasoning above.
     "RUF012",
     "F811",
@@ -189,11 +191,11 @@ pythonPlatform = "All"
 typeCheckingMode = "strict"
 
 reportPrivateUsage = "none"                    # We're the package; of course we're accessing internals.
-reportUnnecessaryIsInstance = "none"           # Account for bad input from users.
-reportUninitializedInstanceVariable = "none"   # Occasionally nice as a checkup, but otherwise noisy.
+reportUnnecessaryIsInstance = "none"           # We should account for garbage input from users.
+reportUninitializedInstanceVariable = "none"   # Nice as an infrequent checkup, but usually noisy.
 reportCallInDefaultInitializer = "warning"
 reportImplicitOverride = "warning"
-reportImportCycles = "none"
+reportImportCycles = "none"                    # Nice as an infrequent checkup, but "if TYPE_CHECKING" causes false positives.
 reportPropertyTypeMismatch = "error"
 reportShadowedImports = "error"
 reportUnnecessaryTypeIgnoreComment = "warning"

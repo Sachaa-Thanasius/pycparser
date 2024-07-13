@@ -1,5 +1,5 @@
 # ruff: noqa: A002
-"""AST nodes and tools."""
+"""Module that defines necessary C AST nodes and helpers."""
 
 import contextlib
 from collections import deque
@@ -12,6 +12,7 @@ from typing import Union as TUnion
 from ._cluegen import Datum, all_clues, all_defaults, cluegen
 from ._typing_compat import Self, TypeAlias, TypeGuard, override
 from .utils import Coord
+
 
 __all__ = (
     # Nodes

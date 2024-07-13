@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from ._cluegen import Datum
 from ._typing_compat import Self, override
 
+
 if TYPE_CHECKING:
     from .c_parser import CParser
 

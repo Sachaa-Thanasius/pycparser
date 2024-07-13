@@ -1,3 +1,5 @@
+"""Module with main entry points for parser usage."""
+
 import os
 from collections import ChainMap
 from collections.abc import Sequence
@@ -8,11 +10,12 @@ from .c_lexer import CLexer
 from .c_parser import CParser
 from .utils import Coord
 
+
 __all__ = ("CContext", "parse", "preprocess_file", "parse_file")
 
 
 class CParsingError(Exception):
-    """Exception raised when something went wrong while parsing C."""
+    """Exception raised when something goes wrong while parsing."""
 
     def __init__(self, message: str, coord: Coord, *args: object) -> None:
         super().__init__(f"{coord}: {message}", *args)

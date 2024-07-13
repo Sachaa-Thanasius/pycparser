@@ -3,6 +3,7 @@ from difflib import Differ
 import pytest
 from cparsing import c_ast
 
+
 _differ = Differ()
 
 

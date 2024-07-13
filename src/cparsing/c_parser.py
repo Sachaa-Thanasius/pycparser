@@ -12,6 +12,7 @@ from ._typing_compat import NotRequired, Self, override
 from .c_lexer import CLexer
 from .utils import Coord
 
+
 if TYPE_CHECKING:
     from sly.types import _, subst
 

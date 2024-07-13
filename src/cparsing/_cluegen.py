@@ -18,7 +18,7 @@
 # greater good.
 # -----------------------------------------------------------------------------
 # endregion
-"""A modified version of cluegen, with support for typing and simple defaults."""
+"""Modified version of cluegen, with support for typing and simple defaults."""
 
 import sys
 from collections.abc import Callable
@@ -28,15 +28,12 @@ from typing import Any, ClassVar, Final, Protocol, TypeVar, final, get_origin
 
 from ._typing_compat import Self, dataclass_transform, override
 
+
 _DBT_contra = TypeVar("_DBT_contra", bound="DatumBase", contravariant=True)
 
-
 class _ClueGenDescriptor(Protocol[_DBT_contra]):
-    def __get__(self, instance: _DBT_contra, owner: type[_DBT_contra]) -> Any: ...
+    def __get__(self, instance: _DBT_contra, owner: type[_DBT_contra]) -> object: ...
     def __set_name__(self, owner: type[_DBT_contra], name: str) -> None: ...
-
-
-__all__ = ("all_clues", "all_defaults", "cluegen", "DatumBase", "Datum")
 
 
 @final
@@ -49,13 +46,19 @@ class _Nothing:
 
 
 CLUEGEN_NOTHING: Final[Any] = _Nothing()
-"""Internal sentinel that can act as a placeholder for a mutable default value in a signature."""
+"""Sentinel that can act as a placeholder for a mutable default value in a signature."""
+
+_MISSING = object()
+
+__all__ = ("all_clues", "all_defaults", "cluegen", "DatumBase", "Datum")
 
 
 def cluegen(func: Callable[[type[_DBT_contra]], str]) -> _ClueGenDescriptor[_DBT_contra]:
-    """Create a custom ClueGen descriptor that will, as needed, execute and assign the code resulting from `func`."""
+    """Create a custom ClueGen descriptor that will, as needed, run the given function to get code, execute the code to
+    get a new function, then replace itself with that function.
+    """
 
-    def __get__(self: _ClueGenDescriptor[_DBT_contra], instance: _DBT_contra, owner: type[_DBT_contra]) -> Any:
+    def __get__(self: _ClueGenDescriptor[_DBT_contra], instance: _DBT_contra, owner: type[_DBT_contra]) -> object:
         try:
             owner_mod = sys.modules[owner.__module__]
         except KeyError:
@@ -63,7 +66,7 @@ def cluegen(func: Callable[[type[_DBT_contra]], str]) -> _ClueGenDescriptor[_DBT
         else:
             global_ns = dict(owner_mod.__dict__, CLUEGEN_NOTHING=CLUEGEN_NOTHING)
 
-        local_ns: dict[str, Any] = {}
+        local_ns: dict[str, Callable[..., object]] = {}
         code = func(owner)
 
         exec(code, global_ns, local_ns)  # noqa: S102
@@ -84,14 +87,14 @@ def cluegen(func: Callable[[type[_DBT_contra]], str]) -> _ClueGenDescriptor[_DBT
     return type(f"ClueGen_{func.__name__}", (), {"__get__": __get__, "__set_name__": __set_name__})()  # pyright: ignore
 
 
-def all_clues(cls: type) -> dict[str, Any]:
+def all_clues(cls: type) -> dict[str, object]:
     """Get all annotations from a type. This excludes ClassVars while traversing the type's mro."""
 
     clues = reduce(lambda x, y: getattr(y, "__annotations__", {}) | x, cls.__mro__, {})
     return {name: ann for name, ann in clues.items() if (get_origin(ann) or ann) is not ClassVar}
 
 
-def all_defaults(cls: type, clues: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+def all_defaults(cls: type, clues: dict[str, object]) -> tuple[dict[str, object], dict[str, object]]:
     """Collect and remove all default values from class-level variables with annotations, if they exist.
 
     Notes
@@ -99,15 +102,13 @@ def all_defaults(cls: type, clues: dict[str, Any]) -> tuple[dict[str, Any], dict
     This accounts for some mutable defaults: lists, dicts, sets, and bytearrays.
     """
 
-    defaults: dict[str, Any] = {}
-    mutable_defaults: dict[str, Any] = {}
+    defaults: dict[str, object] = {}
+    mutable_defaults: dict[str, object] = {}
 
     for name in clues:
-        try:
-            default = getattr(cls, name)
-        except AttributeError:
-            pass
-        else:
+        default = getattr(cls, name, _MISSING)
+
+        if default is not _MISSING:  # noqa: SIM102 # Readability: Separate sentinel check from other logic.
             if not isinstance(default, MemberDescriptorType):
                 if isinstance(default, (list, dict, set, bytearray)):
                     mutable_defaults[name] = default
@@ -128,7 +129,7 @@ class DatumBase:
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         super().__init_subclass__(**kwargs)
-        submethods: list[tuple[str, Any]] = []
+        submethods: list[tuple[str, _ClueGenDescriptor[Self]]] = []
         for name, val in cls._methods:
             if name not in cls.__dict__:
                 setattr(cls, name, val)

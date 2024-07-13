@@ -1,8 +1,9 @@
-"""Shim for typing-related names that may have different sources or not exist at runtime."""
+"""Compatibility module for re-exporting symbols from typing or typing-extensions as needed."""
 
 import sys
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
+
 
 if sys.version_info >= (3, 9, 2):  # noqa: UP036 # Subclassing functionality not added until then.
     from types import GenericAlias as _GenericAlias
