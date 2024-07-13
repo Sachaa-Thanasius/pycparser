@@ -20,23 +20,22 @@ class Coord(Datum):
     filename: str = "<unknown>"
 
     @classmethod
-    def from_literal(cls, p: Any, literal: str) -> Self:
-        return cls(p.lineno, p.index, None, None)
+    def from_prod(cls, p: Any, parser: "CParser") -> Self:
+        return cls(p.lineno, p.index, filename=parser.ctx.filename)
 
     @classmethod
-    def from_prod(cls, parser: "CParser", p: Any) -> Self:
+    def from_node(cls, p: object, parser: "CParser") -> Self:
         lineno = parser.line_position(p)
-        assert lineno
-
         col_start, col_end = parser.index_position(p)
-        assert col_start
-        assert col_end
+        filename = parser.ctx.filename
 
-        return cls(lineno, col_start, None, col_end)
+        assert lineno
+        assert col_start
+
+        return cls(lineno, col_start, None, col_end, filename)
 
     @override
     def __str__(self) -> str:
-        fmt = f"filename={self.filename} | start=({self.line_start}, {self.col_start})"
-        if self.line_end is not None or self.col_end is not None:
-            fmt += f" | end=({self.line_end}, {self.col_end})"
-        return fmt
+        line_end = self.line_end if (self.line_end is not None) else "?"
+        col_end = self.col_end if (self.col_end is not None) else "?"
+        return f"{self.filename} | {self.line_start}:{self.col_start}-{line_end}:{col_end}"

@@ -34,6 +34,9 @@ Homepage = "https://github.com/Sachaa-Thanasius/pycparser"
 [tool.hatch.build.targets.wheel]
 packages = ["src/cparsing"]
 
+[tool.hatch.metadata]
+allow-direct-references = true
+
 
 # ---- Testing config
 
@@ -44,7 +47,7 @@ python = ["3.9", "3.10", "3.11", "3.12"]
 extra-dependencies = ["covdefaults"]
 
 [tool.pytest.ini_options]
-addopts = ["--import-mode=importlib", "--strict-markers", "--strict-config"]
+addopts = ["--strict-markers", "--strict-config"]
 
 [tool.coverage.run]
 plugins = ["covdefaults"]

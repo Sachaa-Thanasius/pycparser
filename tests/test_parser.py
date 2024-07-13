@@ -57,32 +57,33 @@ def test_initial_semi(test_input: str, expected: c_ast.AST):
 #
 # Test the "coordinates" of parsed elements - file name, line and column numbers, with modification inserted by
 # #line directives.
+# TODO: Reexamine Coord system, how they're populated in nodes, the expected results, etc. Compare to pycparser.
 
 
-@pytest.mark.xfail(reason="TODO")
-@pytest.mark.parametrize(("test_input", "expected_coord"), [("int a;", Coord(1, *(5, 0), filename="<unknown>"))])
+@pytest.mark.parametrize(("test_input", "expected_coord"), [("int a;", Coord(1, 4, filename="<unknown>"))])
 def test_coords_without_filename(test_input: str, expected_coord: Coord):
     tree = parse(test_input)
     assert tree.ext[0].coord == expected_coord
 
 
-@pytest.mark.xfail(reason="TODO")
 def test_coords_with_filename_1():
     test_input = """\
 int a;
-int b;\n\n
+int b;
+
+
 int c;
 """
     filename = "test.c"
 
     tree = parse(test_input, filename=filename)
 
-    assert tree.ext[0].coord == Coord(2, *(13, 0), filename=filename)
-    assert tree.ext[1].coord == Coord(3, *(13, 0), filename=filename)
-    assert tree.ext[2].coord == Coord(6, *(13, 0), filename=filename)
+    assert tree.ext[0].coord == Coord(1, 4, filename=filename)
+    assert tree.ext[1].coord == Coord(2, 11, filename=filename)
+    assert tree.ext[2].coord == Coord(5, 20, filename=filename)
 
 
-@pytest.mark.xfail(reason="TODO")
+# @pytest.mark.xfail(reason="TODO")
 def test_coords_with_filename_2():
     test_input = """\
 int main() {

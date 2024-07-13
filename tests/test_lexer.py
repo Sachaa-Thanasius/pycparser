@@ -10,9 +10,9 @@ from cparsing.c_lexer import CLexer
 
 @pytest.fixture
 def clex() -> CLexer:
-    context = CContext()
-    context.scope_stack["mytype"] = True
-    return CLexer(context)
+    ctx = CContext()
+    ctx.scope_stack["mytype"] = True
+    return CLexer(ctx)
 
 
 def do_lex(lexer: CLexer, inp: str) -> list[str]:
@@ -186,7 +186,7 @@ def test_string_literal(clex: CLexer, test_input: str, expected: list[str]):
 @pytest.mark.parametrize(
     ("test_input", "expected"),
     [
-        (r"[{}]()", ["[", "LBRACE", "RBRACE", "]", "(", ")"]),
+        (r"[{}]()", ["[", "{", "}", "]", "(", ")"]),
         (r"()||!C&~Z?J", ["(", ")", "LOR", "LNOT", "ID", "AND", "NOT", "ID", "CONDOP", "ID"]),
         (
             r"+-*/%|||&&&^><>=<===!=",
@@ -262,20 +262,20 @@ def test_exprs(clex: CLexer, test_input: str, expected: list[str]):
         ),
         ("self: goto self;", ["ID", ":", "GOTO", "ID", ";"]),
         (
-            """ switch (typ)
-            {
-                case TYPE_ID:
-                    m = 5;
-                    break;
-                default:
-                    m = 8;
-            }""",
+            "switch (typ)\n"
+            "{\n"
+            "    case TYPE_ID:\n"
+            "        m = 5;\n"
+            "        break;\n"
+            "    default:\n"
+            "        m = 8;\n"
+            "}\n",
             [
                 "SWITCH",
                 "(",
                 "ID",
                 ")",
-                "LBRACE",
+                "{",
                 "CASE",
                 "ID",
                 ":",
@@ -291,7 +291,7 @@ def test_exprs(clex: CLexer, test_input: str, expected: list[str]):
                 "EQUALS",
                 "INT_CONST_DEC",
                 ";",
-                "RBRACE",
+                "}",
             ],
         ),
     ],
@@ -329,7 +329,7 @@ def test_preprocessor_line(clex: CLexer):
     assert t2.type == "ID"
     assert t2.value == "id"
     assert t2.lineno == 66
-    assert clex.context.filename == r"kwas\df.h"
+    assert clex.ctx.filename == r"kwas\df.h"
 
     t = next(tokenizer)
     t = next(tokenizer)
@@ -338,19 +338,19 @@ def test_preprocessor_line(clex: CLexer):
     assert t.type == "ID"
     assert t.value == "armo"
     assert t.lineno == 9
-    assert clex.context.filename == r"kwas\df.h"
+    assert clex.ctx.filename == r"kwas\df.h"
 
     t4 = next(tokenizer)
     assert t4.type == "ID"
     assert t4.value == "tok1"
     assert t4.lineno == 10
-    assert clex.context.filename == r"..\~..\test.h"
+    assert clex.ctx.filename == r"..\~..\test.h"
 
     t5 = next(tokenizer)
     assert t5.type == "ID"
     assert t5.value == "tok2"
     assert t5.lineno == 99999
-    assert clex.context.filename == r"include/me.h"
+    assert clex.ctx.filename == r"include/me.h"
 
 
 def test_preprocessor_line_funny(clex: CLexer):
@@ -365,7 +365,7 @@ def test_preprocessor_line_funny(clex: CLexer):
     t1 = next(tokenizer)
     assert t1.type == "INT_CONST_DEC"
     assert t1.lineno == 10
-    assert clex.context.filename == r"..\6\joe.h"
+    assert clex.ctx.filename == r"..\6\joe.h"
 
 
 def test_preprocessor_pragma(clex: CLexer):

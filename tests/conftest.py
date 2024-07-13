@@ -16,16 +16,16 @@ def pytest_assertrepr_compare(config: pytest.Config, op: str, left: object, righ
     if op == "==" and isinstance(left, c_ast.AST) and isinstance(right, c_ast.AST):
         verbosity = config.get_verbosity()
 
-        # Truncate the reprs with centered ellipses.
+        # Truncate the reprs with ellipses in the center.
         left_node_repr = repr(left)
         if len(left_node_repr) > 30:
-            left_node_repr = left_node_repr[:14] + "..." + left_node_repr[16:]
+            left_node_repr = left_node_repr[:14] + "..." + left_node_repr[-14:]
 
         right_node_repr = repr(right)
         if len(right_node_repr) > 30:
-            right_node_repr = right_node_repr[:14] + "..." + right_node_repr[16:]
+            right_node_repr = right_node_repr[:14] + "..." + right_node_repr[-14:]
 
-        # By default, only compare the reprs.
+        # By default, only show the reprs.
         displayed_comparison = [
             f"{left_node_repr} == {right_node_repr}",
             "",

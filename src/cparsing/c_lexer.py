@@ -24,7 +24,7 @@ __all__ = ("CLexer",)
 # ============================================================================
 
 
-def _find_token_column(text: str, t: Token) -> int:
+def _find_column(text: str, t: Token) -> int:
     last_cr = text.rfind("\n", 0, t.index)
     if last_cr < 0:
         last_cr = 0
@@ -39,19 +39,18 @@ _hex_digits = "[0-9a-fA-F]+"
 _bin_prefix = "0[bB]"
 _bin_digits = "[01]+"
 
-# integer constants (K&R2: A.2.5.1)
+# ---- integer constants (K&R2: A.2.5.1)
 _integer_suffix_opt = r"(([uU]ll)|([uU]LL)|(ll[uU]?)|(LL[uU]?)|([uU][lL])|([lL][uU]?)|[uU])?"
 _decimal_constant = "(0" + _integer_suffix_opt + ")|([1-9][0-9]*" + _integer_suffix_opt + ")"
 
-# character constants (K&R2: A.2.5.2)
-# Note: a-zA-Z and '.-~^_!=&;,' are allowed as escape chars to support #line
-# directives with Windows paths as filenames (..\..\dir\file)
-# For the same reason, decimal_escape allows all digit sequences. We want to
-# parse all correct code, even if it means to sometimes parse incorrect
-# code.
+# ---- character constants (K&R2: A.2.5.2)
+# Note: a-zA-Z and '.-~^_!=&;,' are allowed as escape chars to support #line directives with Windows paths as
+# filenames (..\..\dir\file).
+# For the same reason, decimal_escape allows all digit sequences. We want to parse all correct code, even if it means
+# to sometimes parse incorrect code.
 #
-# The original regexes were taken verbatim from the C syntax definition,
-# and were later modified to avoid worst-case exponential running time.
+# The original regexes were taken verbatim from the C syntax definition, and were later modified to avoid worst-case
+# exponential running time.
 #
 #   simple_escape = r"""([a-zA-Z._~!=&\^\-\\?'"])"""
 #   decimal_escape = r"""(\d+)"""
@@ -75,14 +74,15 @@ _bad_escape = r"""([\\][^a-zA-Z._~^!=&\^\-\\?'"x0-9])"""
 
 _escape_sequence = r"""(\\(""" + _simple_escape + "|" + _decimal_escape + "|" + _hex_escape + "))"
 
-# This complicated regex with lookahead might be slow for strings, so because all of the valid escapes (including \x) allowed
-# 0 or more non-escaped characters after the first character, simple_escape+decimal_escape+hex_escape got simplified to
+# This complicated regex with lookahead might be slow for strings, so because all of the valid escapes (including \x)
+# allowed 0 or more non-escaped characters after the first character, simple_escape+decimal_escape+hex_escape got
+# simplified too.
 _escape_sequence_start_in_string = r"""(\\[0-9a-zA-Z._~!=&\^\-\\?'"])"""
 
 _string_char = r"""([^"\\\n]|""" + _escape_sequence_start_in_string + ")"
 _cconst_char = r"""([^'\\\n]|""" + _escape_sequence + ")"
 
-# floating constants (K&R2: A.2.5.3)
+# ---- floating constants (K&R2: A.2.5.3)
 _exponent_part = r"""([eE][-+]?[0-9]+)"""
 _fractional_constant = r"""([0-9]*\.[0-9]+)|([0-9]+\.)"""
 _binary_exponent_part = r"""([pP][+-]?[0-9]+)"""
@@ -98,6 +98,8 @@ _hex_fractional_constant = "(((" + _hex_digits + r""")?\.""" + _hex_digits + ")|
 
 
 class CLexer(Lexer):
+    """Lexer state that handles regular C code."""
+
     # ---- Reserved keywords
     # fmt: off
     keywords: set[str] = {
@@ -118,7 +120,7 @@ class CLexer(Lexer):
         # Type identifiers (identifiers previously defined as types with typedef)
         TYPEID,
 
-        # constants
+        # Constants
         INT_CONST_DEC, INT_CONST_OCT, INT_CONST_HEX, INT_CONST_BIN, INT_CONST_CHAR,
         FLOAT_CONST, HEX_FLOAT_CONST,
         CHAR_CONST, WCHAR_CONST, U8CHAR_CONST, U16CHAR_CONST, U32CHAR_CONST,
@@ -154,9 +156,6 @@ class CLexer(Lexer):
         # Ellipsis (...)
         ELLIPSIS,
 
-        # Scope delimiters
-        LBRACE, RBRACE,
-
         # Pre-processor
         PP_HASH,       # "#"
         PP_PRAGMA,     # "pragma"
@@ -164,8 +163,8 @@ class CLexer(Lexer):
     }
     # fmt: on
 
-    # ---- Regular delimiters
-    literals = {",", ".", ";", ":", "(", ")", "[", "]"}
+    # ---- Regular and scope delimiters
+    literals = {",", ".", ";", ":", "(", ")", "[", "]", "{", "}"}
 
     ignore = " \t"
 
@@ -174,6 +173,7 @@ class CLexer(Lexer):
     def PP_HASH(self, t: Token) -> Optional[Token]:
         if _line_pattern.match(self.text, pos=t.end):
             self.push_state(PreprocessorLineLexer)
+            # Initialize instance variables. See PreprocessorLineLexer.__init__().
             self.pp_line = None
             self.pp_filename = None
             return None
@@ -337,17 +337,19 @@ class CLexer(Lexer):
     # fmt: on
 
     def ID(self, t: Token) -> Token:
-        if self.context.scope_stack.get(t.value, False):
+        if self.ctx.scope_stack.get(t.value, False):
             t.type = "TYPEID"
         return t
 
     @_(r"\{")
-    def LBRACE(self, t: Token) -> Token:
+    def lbrace(self, t: Token) -> Token:
+        t.type = "{"
         self.create_scope()
         return t
 
     @_(r"\}")
-    def RBRACE(self, t: Token) -> Token:
+    def rbrace(self, t: Token) -> Token:
+        t.type = "}"
         self.pop_scope()
         return t
 
@@ -357,20 +359,19 @@ class CLexer(Lexer):
 
     @override
     def error(self, t: Token, msg: Optional[str] = None) -> NoReturn:
-        column = _find_token_column(self.text, t)
         msg = msg or f"Bad character {t.value[0]!r}"
-        self.context.error(f"Bad character {t.value[0]!r}", Coord(self.lineno, column))
+        column = _find_column(self.text, t)
 
-    def __init__(self, context: "c_context.CContext") -> None:
-        self.context = context
-        self.pp_line: Optional[str] = None
-        self.pp_filename: Optional[str] = None
+        self.ctx.error(msg, Coord(self.lineno, column))
+
+    def __init__(self, ctx: "c_context.CContext") -> None:
+        self.ctx = ctx
 
     def create_scope(self) -> None:
-        self.context.scope_stack = self.context.scope_stack.new_child()
+        self.ctx.scope_stack = self.ctx.scope_stack.new_child()
 
     def pop_scope(self) -> None:
-        self.context.scope_stack = self.context.scope_stack.parents
+        self.ctx.scope_stack = self.ctx.scope_stack.parents
 
 
 class PreprocessorLineLexer(Lexer):
@@ -389,11 +390,11 @@ class PreprocessorLineLexer(Lexer):
 
     @_(_decimal_constant)  # Same string as INT_DEC_CONST.
     def LINE_NUMBER(self, t: Token) -> None:
-        if self.pp_line is None:
-            self.pp_line = t.value
-        else:
+        if self.pp_line is not None:
             # Ignore: GCC's cpp sometimes inserts a numeric flag after the file name
-            pass
+            return
+
+        self.pp_line = t.value
 
     @_(r"line")
     def PP_LINE(self, t: Token) -> None:
@@ -407,18 +408,19 @@ class PreprocessorLineLexer(Lexer):
             self.lineno = int(self.pp_line)
 
             if self.pp_filename is not None:
-                self.context.filename = self.pp_filename
+                self.ctx.filename = self.pp_filename
 
         self.pop_state()
 
     @override
     def error(self, t: Token, msg: Optional[str] = None) -> NoReturn:
-        column = _find_token_column(self.text, t)
         msg = msg or f"invalid #line directive {t.value}"
-        self.context.error(msg, Coord(self.lineno, column))
+        column = _find_column(self.text, t)
 
-    def __init__(self, context: "c_context.CContext") -> None:
-        self.context = context
+        self.ctx.error(msg, Coord(self.lineno, column))
+
+    def __init__(self, ctx: "c_context.CContext") -> None:
+        self.ctx = ctx
         self.pp_line: Optional[str] = None
         self.pp_filename: Optional[str] = None
 
@@ -444,12 +446,13 @@ class PreprocessorPragmaLexer(Lexer):
 
     @override
     def error(self, t: Token, msg: Optional[str] = None) -> NoReturn:
-        column = _find_token_column(self.text, t)
         msg = msg or f"invalid #pragma directive {t.value}"
-        self.context.error(msg, Coord(self.lineno, column), t.value)
+        column = _find_column(self.text, t)
 
-    def __init__(self, context: "c_context.CContext") -> None:
-        self.context = context
+        self.ctx.error(msg, Coord(self.lineno, column))
+
+    def __init__(self, ctx: "c_context.CContext") -> None:
+        self.ctx = ctx
 
 
 # endregion
