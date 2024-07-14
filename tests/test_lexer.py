@@ -1,25 +1,24 @@
+"""Test `c_lexer.CLexer`."""
+
 import pytest
 from cparsing.c_context import CContext
 from cparsing.c_lexer import CLexer
-
-
-# ============================================================================
-# region -------- Helpers
-# ============================================================================
+from sly.lex import Token
 
 
 @pytest.fixture
 def clex() -> CLexer:
     ctx = CContext()
     ctx.scope_stack["mytype"] = True
-    return CLexer(ctx)
+    return ctx.lexer
 
 
 def do_lex(lexer: CLexer, inp: str) -> list[str]:
     return [tok.type for tok in lexer.tokenize(inp)]
 
 
-# endregion
+def match_token(token: Token, **attrs: object) -> bool:
+    return all(getattr(token, name) == expected_val for name, expected_val in attrs.items())
 
 
 @pytest.mark.parametrize(
@@ -49,7 +48,7 @@ def test_trivial_tokens(clex: CLexer, test_input: str, expected: list[str]):
     ],
 )
 def test_id_typeid(clex: CLexer, test_input: str, expected: list[str]):
-    # Assumes {'mytype': True} is in the scope stack. See the clex fixture.
+    # NOTE: This test assumes {'mytype': True} is in the scope stack. See the clex fixture.
     assert do_lex(clex, test_input) == expected
 
 
@@ -75,8 +74,8 @@ def test_id_typeid(clex: CLexer, test_input: str, expected: list[str]):
         ("'123'", ["INT_CONST_CHAR"]),
         ("'1AB4'", ["INT_CONST_CHAR"]),
         (r"'1A\n4'", ["INT_CONST_CHAR"]),
-        ("xf7", ["ID"]),  # no 0 before x, so ID catches it
-        ("-1", ["MINUS", "INT_CONST_DEC"]),  # - is MINUS, the rest a constnant
+        pytest.param("xf7", ["ID"], id="no 0 before x, so ID catches it"),
+        pytest.param("-1", ["MINUS", "INT_CONST_DEC"], id="- is MINUS, the rest a constant"),
     ],
 )
 def test_integer_constants(clex: CLexer, test_input: str, expected: list[str]):
@@ -107,13 +106,13 @@ def test_new_keywords(clex: CLexer, test_input: str, expected: list[str]):
         ("01.5", ["FLOAT_CONST"]),
         (".15L", ["FLOAT_CONST"]),
         ("0.", ["FLOAT_CONST"]),
-        (".", ["."]),  # but just a period is a period
+        pytest.param(".", ["."], id="a period is just a period"),
         ("3.3e-3", ["FLOAT_CONST"]),
         (".7e25L", ["FLOAT_CONST"]),
         ("6.e+125f", ["FLOAT_CONST"]),
         ("666e666", ["FLOAT_CONST"]),
         ("00666e+3", ["FLOAT_CONST"]),
-        ("0x0666e+3", ["INT_CONST_HEX", "PLUS", "INT_CONST_DEC"]),  # but this is a hex integer + 3
+        pytest.param("0x0666e+3", ["INT_CONST_HEX", "PLUS", "INT_CONST_DEC"], id="hex integer + 3"),
     ],
 )
 def test_floating_constants(clex: CLexer, test_input: str, expected: list[str]):
@@ -166,17 +165,18 @@ def test_char_constants(clex: CLexer, test_input: str, expected: list[str]):
         (r'''"esc\ape \"\'\? \0234 chars \rule"''', ["STRING_LITERAL"]),
         (r'''"hello 'joe' wanna give it a \"go\"?"''', ["STRING_LITERAL"]),
         ('"\123\123\123\123\123\123\123\123\123\123\123\123\123\123\123\123"', ["STRING_LITERAL"]),
-        # Note: a-zA-Z and '.-~^_!=&;,' are allowed as escape chars to support #line
-        # directives with Windows paths as filenames (..\..\dir\file)
+        # Note: a-zA-Z and '.-~^_!=&;,' are allowed as escape chars to support #line directives with Windows paths
+        # as filenames (..\..\dir\file)
         (r'"\x"', ["STRING_LITERAL"]),
         (
             r'"\a\b\c\d\e\f\g\h\i\j\k\l\m\n\o\p\q\r\s\t\u\v\w\x\y\z\A\B\C\D\E\F\G\H\I\J\K\L\M\N\O\P\Q\R\S\T\U\V\W\X\Y\Z"',
             ["STRING_LITERAL"],
         ),
         (r'"C:\x\fa\x1e\xited"', ["STRING_LITERAL"]),
-        # The lexer is permissive and allows decimal escapes (not just octal)
-        (r'"jx\9"', ["STRING_LITERAL"]),
-        (r'"fo\9999999"', ["STRING_LITERAL"]),
+        pytest.param(r'"jx\9"', ["STRING_LITERAL"], id="permissive lexer allow decimal escapes (not just octal); 1"),
+        pytest.param(
+            r'"fo\9999999"', ["STRING_LITERAL"], id="permissive lexer allow decimal escapes (not just octal); 1"
+        ),
     ],
 )
 def test_string_literal(clex: CLexer, test_input: str, expected: list[str]):
@@ -304,89 +304,75 @@ def test_preprocessor_line(clex: CLexer):
     assert do_lex(clex, "#abracadabra") == ["PP_HASH", "ID"]
 
     test_input = r"""
-    546
-    #line 66 "kwas\df.h"
-    id 4
-    dsf
-    # 9
-    armo
-    #line 10 "..\~..\test.h"
-    tok1
-    #line 99999 "include/me.h"
-    tok2
-    """
+546
+#line 66 "kwas\df.h"
+id 4
+dsf
+# 9
+armo
+#line 10 "..\~..\test.h"
+tok1
+#line 99999 "include/me.h"
+tok2
+"""
 
-    # ~ self.clex.filename
     tokenizer = clex.tokenize(test_input)
-    clex.lineno = 1
 
     t1 = next(tokenizer)
-    assert t1.type == "INT_CONST_DEC"
-    assert t1.lineno == 2
+    assert match_token(t1, type="INT_CONST_DEC", lineno=2)
 
     t2 = next(tokenizer)
-
-    assert t2.type == "ID"
-    assert t2.value == "id"
-    assert t2.lineno == 66
+    assert match_token(t2, type="ID", value="id", lineno=66)
     assert clex.ctx.filename == r"kwas\df.h"
 
-    t = next(tokenizer)
-    t = next(tokenizer)
+    _ = next(tokenizer)
+    _ = next(tokenizer)
 
-    t = next(tokenizer)
-    assert t.type == "ID"
-    assert t.value == "armo"
-    assert t.lineno == 9
+    t3 = next(tokenizer)
+    assert match_token(t3, type="ID", value="armo", lineno=9)
     assert clex.ctx.filename == r"kwas\df.h"
 
     t4 = next(tokenizer)
-    assert t4.type == "ID"
-    assert t4.value == "tok1"
-    assert t4.lineno == 10
+    assert match_token(t4, type="ID", value="tok1", lineno=10)
     assert clex.ctx.filename == r"..\~..\test.h"
 
     t5 = next(tokenizer)
-    assert t5.type == "ID"
-    assert t5.value == "tok2"
-    assert t5.lineno == 99999
+    assert match_token(t5, type="ID", value="tok2", lineno=99999)
     assert clex.ctx.filename == r"include/me.h"
 
 
 def test_preprocessor_line_funny(clex: CLexer):
     test_input = r"""
-    #line 10 "..\6\joe.h"
-    10
-    """
+#line 10 "..\6\joe.h"
+10
+"""
 
     tokenizer = clex.tokenize(test_input)
-    clex.lineno = 1
 
     t1 = next(tokenizer)
-    assert t1.type == "INT_CONST_DEC"
-    assert t1.lineno == 10
+    assert match_token(t1, type="INT_CONST_DEC", lineno=10)
     assert clex.ctx.filename == r"..\6\joe.h"
 
 
 def test_preprocessor_pragma(clex: CLexer):
-    test_input = """
-    42
-    #pragma
-    #pragma helo me
-    #pragma once
-    # pragma omp parallel private(th_id)
-    #\tpragma {pack: 2, smack: 3}
-    #pragma <includeme.h> "nowit.h"
-    #pragma "string"
-    #pragma somestring="some_other_string"
-    #pragma id 124124 and numbers 0235495
-    _Pragma("something else")
-    59
-    """
+    """Test that pragmas are tokenized, including trailing string."""
 
-    # Check that pragmas are tokenized, including trailing string
+    test_input = """
+42
+#pragma
+#pragma helo me
+#pragma once
+# pragma omp parallel private(th_id)
+#\tpragma {pack: 2, smack: 3}
+#pragma <includeme.h> "nowit.h"
+#pragma "string"
+#pragma somestring="some_other_string"
+#pragma id 124124 and numbers 0235495
+_Pragma("something else")
+59
+"""
+
     tokenizer = clex.tokenize(test_input)
-    clex.lineno = 1
 
     t1 = next(tokenizer)
     assert t1.type == "INT_CONST_DEC"
@@ -398,32 +384,33 @@ def test_preprocessor_pragma(clex: CLexer):
     assert t3.type == "PP_PRAGMA"
 
     t4 = next(tokenizer)
-    assert t4.type == "PP_PRAGMASTR"
-    assert t4.value == "helo me"
+    assert match_token(t4, type="PP_PRAGMASTR", value="helo me")
 
-    for _ in range(3):
-        next(tokenizer)
+    _ = next(tokenizer)
+    _ = next(tokenizer)
+    _ = next(tokenizer)
 
     t5 = next(tokenizer)
-    assert t5.type == "PP_PRAGMASTR"
-    assert t5.value == "omp parallel private(th_id)"
+    assert match_token(t5, type="PP_PRAGMASTR", value="omp parallel private(th_id)")
 
     for _ in range(5):
         ta = next(tokenizer)
         assert ta.type == "PP_PRAGMA"
+
         tb = next(tokenizer)
         assert tb.type == "PP_PRAGMASTR"
 
     t6a = next(tokenizer)
-    t6l = next(tokenizer)
-    t6b = next(tokenizer)
-    t6r = next(tokenizer)
     assert t6a.type == "PRAGMA_"
+
+    t6l = next(tokenizer)
     assert t6l.type == "("
-    assert t6b.type == "STRING_LITERAL"
-    assert t6b.value == '"something else"'
+
+    t6b = next(tokenizer)
+    assert match_token(t6b, type="STRING_LITERAL", value='"something else"')
+
+    t6r = next(tokenizer)
     assert t6r.type == ")"
 
     t7 = next(tokenizer)
-    assert t7.type == "INT_CONST_DEC"
-    assert t7.lineno == 13
+    assert match_token(t7, type="INT_CONST_DEC", lineno=13)

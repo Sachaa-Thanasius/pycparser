@@ -1,7 +1,7 @@
 # pyright: reportRedeclaration=none, reportUndefinedVariable=none
 """Module for parsing C tokens into an AST."""
 
-from typing import TYPE_CHECKING, Any, NoReturn, Optional, TypedDict, TypeVar, Union, overload
+from typing import TYPE_CHECKING, Any, NoReturn, Optional, TypedDict, TypeVar, Union, cast, overload
 
 from sly import Parser
 from sly.lex import Token
@@ -25,7 +25,7 @@ __all__ = ("CParser",)
 
 
 # ============================================================================
-# region -------- Misc
+# region -------- Helpers and AST fixers
 # ============================================================================
 
 
@@ -46,7 +46,7 @@ class _DeclarationSpecifiers(Datum):
         A list of storage type qualifiers.
     type: list[c_ast.IdType], default=[]
         A list of type specifiers.
-    function: list[Any], default=[]
+    function: list[str], default=[]
         A list of function specifiers.
     alignment: list[c_ast.Alignas], default=[]
         A list of alignment specifiers.
@@ -54,8 +54,8 @@ class _DeclarationSpecifiers(Datum):
 
     qual: list[str] = []
     storage: list[str] = []
-    type: list[c_ast.IdType] = []
-    function: list[Any] = []
+    type: list[Union[c_ast.IdType, c_ast.Typename]] = []
+    function: list[str] = []
     alignment: list[c_ast.Alignas] = []
 
     @classmethod
@@ -78,34 +78,31 @@ class _DeclarationSpecifiers(Datum):
             return decl_spec
 
 
-# endregion
-
-
-# ============================================================================
-# region -------- AST fixers
-# ============================================================================
-
-
-def _fix_atomic_specifiers_once(decl: Any) -> tuple[Any, bool]:
+def _fix_atomic_specifiers_once(decl: Union[c_ast.Typedef, c_ast.Decl]) -> tuple[Any, bool]:
     """Performs one "fix" round of atomic specifiers.
-    Returns (modified_decl, found) where found is True iff a fix was made.
+
+    Returns
+    -------
+    (modified_decl, found): tuple[Any, bool]
+        A tuple with the original decl, possibly modified, and a bool indicating whether a fix was made.
     """
 
-    parent = decl
     grandparent: Any = None
-    node: Any = decl.type
+    parent = decl
+    node = decl.type
+
     while node is not None:
         if isinstance(node, c_ast.Typename) and "_Atomic" in node.quals:
             break
 
         grandparent = parent
         parent = node
+
         try:
             node = node.type
         except AttributeError:
-            # If we've reached a node without a `type` field, it means we won't
-            # find what we're looking for at this point; give up the search
-            # and return the original decl unmodified.
+            # If we've reached a node without a `type` field, it means we won't find what we're looking for
+            # at this point; give up the search and return the original decl unmodified.
             return decl, False
 
     assert isinstance(parent, c_ast.TypeDecl)
@@ -115,7 +112,7 @@ def _fix_atomic_specifiers_once(decl: Any) -> tuple[Any, bool]:
     return decl, True
 
 
-def fix_atomic_specifiers(decl: Any) -> Any:
+def fix_atomic_specifiers(decl: Union[c_ast.Typedef, c_ast.Decl]) -> Any:
     """Atomic specifiers like _Atomic(type) are unusually structured, conferring a qualifier upon the contained type.
 
     This function fixes a decl with atomic specifiers to have a sane AST structure, by removing spurious
@@ -127,9 +124,8 @@ def fix_atomic_specifiers(decl: Any) -> Any:
     while found:
         decl, found = _fix_atomic_specifiers_once(decl)
 
-    # Make sure to add an _Atomic qual on the topmost decl if needed. Also
-    # restore the declname on the innermost TypeDecl (it gets placed in the
-    # wrong place during construction).
+    # Make sure to add an _Atomic qual on the topmost decl if needed.
+    # Also restore the declname on the innermost TypeDecl, since it gets placed in the wrong place during construction.
     typ = decl
     while not isinstance(typ, c_ast.TypeDecl):
         try:
@@ -144,14 +140,14 @@ def fix_atomic_specifiers(decl: Any) -> Any:
     return decl
 
 
-def _extract_nested_case(case_node: Union[c_ast.Case, c_ast.Default], stmts_list: list[Any]) -> None:
+def _extract_nested_case(case_node: Union[c_ast.Case, c_ast.Default], stmts_list: list[c_ast.AST]) -> None:
     """Recursively extract consecutive Case statements that are made nested by the parser and add them to
     `stmts_list`.
     """
 
     if isinstance(case_node.stmts[0], (c_ast.Case, c_ast.Default)):
         stmts_list.append(case_node.stmts.pop())
-        _extract_nested_case(stmts_list[-1], stmts_list)
+        _extract_nested_case(cast(Union[c_ast.Case, c_ast.Default], stmts_list[-1]), stmts_list)
 
 
 def fix_switch_cases(switch_node: c_ast.Switch) -> c_ast.Switch:
@@ -242,7 +238,7 @@ def fix_switch_cases(switch_node: c_ast.Switch) -> c_ast.Switch:
             # 2. If its immediate child is also a Case or Default, promote it to a sibling.
             new_compound.block_items.append(child)
             _extract_nested_case(child, new_compound.block_items)
-            last_case = new_compound.block_items[-1]
+            last_case = cast(Union[c_ast.Case, c_ast.Default], new_compound.block_items[-1])
         else:
             # Other statements are added as children to the last case, if it exists.
             if last_case is None:
@@ -309,7 +305,11 @@ class CParser(Parser):
     # region ---- AST helpers
     # ============================================================================
 
-    def _fix_decl_name_type(self, decl: _DeclarationT, typename: list[c_ast.IdType]) -> _DeclarationT:
+    def _fix_decl_name_type(
+        self,
+        decl: _DeclarationT,
+        typename: Union[list[Union[c_ast.IdType, c_ast.Typename]], list[c_ast.IdType]],
+    ) -> _DeclarationT:
         """Fixes a declaration. Modifies decl."""
 
         # Reach the underlying basic type
@@ -332,6 +332,7 @@ class CParser(Parser):
                     type_.type = tn
                     return decl
 
+        typename = cast(list[c_ast.IdType], typename)  # We know the type at this point.
         if not typename:
             # Functions default to returning int
             if not isinstance(decl.type, c_ast.FuncDecl):
@@ -340,7 +341,7 @@ class CParser(Parser):
 
             type_.type = c_ast.IdType(["int"], coord=decl.coord)
         else:
-            # At this point, we know that typename is a list of IdType nodes.
+            # At this point, we know that typename is a popoulated list of IdType nodes.
             # Concatenate all the names into a single list.
             type_.type = c_ast.IdType([name for id_ in typename for name in id_.names], coord=typename[0].coord)
         return decl
@@ -608,7 +609,7 @@ class CParser(Parser):
         function definitions.
         """
 
-        print("---- Should be here.")
+        # print("---- Should be here.")
 
         if p.declaration_specifiers:
             spec: _DeclarationSpecifiers = p.declaration_specifiers
@@ -884,7 +885,7 @@ class CParser(Parser):
         See section 6.7.2.4 of the C11 standard.
         """
 
-        typ = p.type_name
+        typ: c_ast.Typename = p.type_name
         typ.quals.append(p.ATOMIC_)
         return typ
 
@@ -1100,8 +1101,8 @@ class CParser(Parser):
     @subst_ids
     @_("direct_${_SUB1}_declarator")
     def _SUB1_declarator(self, p: YaccProd) -> Union[c_ast.TypeDecl, c_ast.TypeModifier]:
-        print("---- here 1")
-        print(c_ast.dump(p[0]))
+        # print("---- here 1")
+        # print(c_ast.dump(p[0]))
         return p[0]
 
     @subst_ids
@@ -1112,8 +1113,8 @@ class CParser(Parser):
     @subst_ids
     @_("${_SUB2}")
     def direct__SUB1_declarator(self, p: YaccProd):
-        print("---- here 3")
-        print(f"processed name {p[0]}")
+        # print("---- here 3")
+        # print(f"processed name {p[0]}")
         return c_ast.TypeDecl(declname=p[0], quals=None, coord=Coord.from_prod(p, self))
 
     @subst({"_SUB1": "id"}, {"_SUB1": "typeid"})
@@ -1297,8 +1298,9 @@ class CParser(Parser):
     def parameter_declaration(self, p: YaccProd):
         spec: _DeclarationSpecifiers = p.declaration_specifiers
         if not spec.type:
-            spec.type = [c_ast.IdType(["int"], coord=Coord.from_node(p.declaration_specifiers, self))]
+            spec.type.append(c_ast.IdType(["int"], coord=Coord.from_node(p.declaration_specifiers, self)))
 
+        print(f"{spec.type=}")
         # Parameters can have the same names as typedefs. The trouble is that the parameter's name gets grouped into
         # declaration_specifiers, making it look like an old-style declaration; compensate.
         if len(spec.type) > 1 and len(spec.type[-1].names) == 1 and self.is_type_in_scope(spec.type[-1].names[0]):
@@ -1331,7 +1333,6 @@ class CParser(Parser):
         'lbrace initializer_list "," rbrace',
     )
     def initializer(self, p: YaccProd):
-        print("---- here 42")
         if p.initializer_list is not None:
             return p.initializer_list
         else:

@@ -52,6 +52,7 @@ addopts = ["--strict-markers", "--strict-config"]
 [tool.coverage.run]
 plugins = ["covdefaults"]
 source = ["cparsing", "tests"]
+omit = ["tests/conftest.py"]
 
 [tool.coverage.paths]
 cparsing = ["src"]
@@ -63,7 +64,7 @@ exclude_lines = ["^\\s*(?:el)?if TYPE_CHECKING:$"]
 # ---- Linting config
 
 [tool.ruff]
-include = ["src/cparsing/*.py", "tests/*.py"]
+include = ["src/cparsing/*.py", "tests/**/*.py"]
 line-length = 120
 target-version = "py39"
 

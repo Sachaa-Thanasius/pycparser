@@ -1,3 +1,5 @@
+"""Test `c_ast.unparse()`, including roundtripping."""
+
 import platform
 from pathlib import Path
 from typing import Literal
@@ -41,11 +43,6 @@ def assert_c_to_c_is_correct(src: str, *, reduce_parentheses: bool = False):
 
 
 # endregion
-
-
-# ============================================================================
-# region -------- Tests
-# ============================================================================
 
 
 @pytest.mark.parametrize(
@@ -709,6 +706,3 @@ def test_to_type_with_cpp():
 )
 def test_nested_else_if_line_breaks(test_tree: c_ast.AST, expected: str):
     assert c_ast.unparse(test_tree) == expected
-
-
-# endregion

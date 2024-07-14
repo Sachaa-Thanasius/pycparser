@@ -107,10 +107,7 @@ def test_initial_semi(test_input: str, expected: c_ast.AST):
                         [
                             c_ast.Decl(
                                 "s",
-                                c_ast.PtrDecl(
-                                    quals=[],
-                                    type=c_ast.TypeDecl("s", type=c_ast.IdType(["char"])),
-                                ),
+                                c_ast.PtrDecl(quals=[], type=c_ast.TypeDecl("s", type=c_ast.IdType(["char"]))),
                             )
                         ]
                     ),
@@ -155,7 +152,7 @@ def test_initial_semi(test_input: str, expected: c_ast.AST):
             "__int128 a;",
             c_ast.Decl("a", c_ast.TypeDecl("a", type=c_ast.IdType(["__int128"]))),
             id=(
-                "__int128: it isn't part of the core C99 or C11 standards, but is mentioned in both documents"
+                "__int128: it isn't part of the core C99 or C11 standards, but is mentioned in both documents "
                 "under 'Common Extensions'."
             ),
         ),

@@ -66,7 +66,7 @@ __all__ = (
     "Typedef",
     "Typename",
     "Union",
-    # Utilities
+    # Helpers
     "compare",
     "iter_child_nodes",
     "walk",
@@ -137,10 +137,6 @@ else:
 
 
 # region ---- Basic
-class Pragma(AST):
-    string: str
-
-
 class Id(AST):
     name: str
 
@@ -148,6 +144,10 @@ class Id(AST):
 class Constant(AST):
     type: str
     value: str
+
+
+class Pragma(AST):
+    string: str
 
 
 class IdType(AST):
@@ -177,7 +177,7 @@ class InitList(AST):
 
 
 class CompoundLiteral(AST):
-    type: AST
+    type: "Typename"
     init: InitList
 
 
@@ -321,7 +321,7 @@ class TypeDecl(AST):
     declname: Optional[str] = None
     quals: Optional[list[str]] = []
     align: Optional[list["Alignas"]] = None
-    type: Optional[TUnion[IdType, Struct, Union, Enum]] = None
+    type: Optional[TUnion[IdType, "Typename", Struct, Union, Enum]] = None
 
 
 class ArrayDecl(AST):
@@ -354,20 +354,11 @@ class Decl(AST):
     bitsize: Optional[AST] = None
 
 
-class DeclList(AST):
-    # Seemingly only present in For.init.
-    decls: list[Decl]
-
-
-# endregion
-
-
-# region ---- Everything else
 class Typedef(AST):
     name: Optional[str]
     quals: list[str]
     storage: list[str]
-    type: AST  # TODO: TUnion[TypeDecl, PtrDecl, ArrayDecl]
+    type: TUnion[TypeDecl, PtrDecl, ArrayDecl]
 
 
 class Typename(AST):
@@ -375,6 +366,15 @@ class Typename(AST):
     quals: list[str]
     align: Optional[Any]
     type: TUnion[TypeDecl, TypeModifier]
+
+
+# endregion
+
+
+# region ---- Everything else
+class DeclList(AST):
+    # Seemingly only present in For.init.
+    decls: list[Decl]
 
 
 class ArrayRef(AST):
@@ -589,7 +589,7 @@ class _NodePrettyPrinter(NodeVisitor):
         finally:
             self.write(end)
 
-    def generic_visit_list(self, list_field: list[object]) -> Generator[AST, Any, None]:
+    def generic_visit_list(self, list_field: list[object]) -> Generator[AST]:
         if not list_field:
             self.write("[]")
         else:
@@ -609,7 +609,7 @@ class _NodePrettyPrinter(NodeVisitor):
                 self.remove_extra_separator()
 
     @override
-    def generic_visit(self, node: AST) -> Generator[Any, Any, None]:
+    def generic_visit(self, node: AST) -> Generator[AST]:
         with self.add_indent_level():
             self.write(f"{type(node).__name__}")
 
@@ -673,6 +673,7 @@ def dump(
 
 # endregion
 
+
 # ========
 # region ---- Unparser
 # ========
@@ -712,7 +713,7 @@ class _Unparser(NodeVisitor):
         return " " * self.indent_level
 
     @contextlib.contextmanager
-    def add_indent_level(self, val: int = 1) -> Generator[None, Any, None]:
+    def add_indent_level(self, val: int = 1) -> Generator[None]:
         self.indent_level += val
         try:
             yield
@@ -800,7 +801,7 @@ class _Unparser(NodeVisitor):
         else:
             return f"{indent}{result}\n"
 
-    def _generate_decl(self, node: Decl) -> Generator[Any, str, str]:
+    def _generate_decl(self, node: Decl) -> Generator[AST, str, str]:
         """Generation from a Decl node."""
 
         results: list[str] = []
@@ -1305,5 +1306,6 @@ def unparse(node: AST, *, reduce_parentheses: bool = False) -> str:
 
 
 # endregion
+
 
 # endregion

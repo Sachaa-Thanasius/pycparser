@@ -55,8 +55,13 @@ __all__ = ("all_clues", "all_defaults", "cluegen", "DatumBase", "Datum")
 
 
 def cluegen(func: Callable[[type[_DBT_contra]], str]) -> _ClueGenDescriptor[_DBT_contra]:
-    """Create a custom ClueGen descriptor that will, as needed, run the given function to get code, execute the code to
-    get a new function, then replace itself with that function.
+    """Create a custom ClueGen descriptor.
+
+    Extended Summary
+    ----------------
+    This function dynamically creates a non-data desciptor with `__get__()` and `__set_name__()` methods.
+    In `__get__()`, this descriptor will run the given function to get code, execute the code to get a new function,
+    then replace itself with that function in whatever class it's bound to.
     """
 
     def __get__(self: _ClueGenDescriptor[_DBT_contra], instance: _DBT_contra, owner: type[_DBT_contra]) -> object:
@@ -144,8 +149,7 @@ class DatumBase:
 
 @dataclass_transform()
 class Datum(DatumBase):
-    """Base data structure that automatically creates `__init__`, `__repr__`, `__eq__`, and `__match_args__` based on
-    class annotations.
+    """Base data structure that automatically creates some magic methods and attributes based on class annotations.
 
     Notes
     -----
