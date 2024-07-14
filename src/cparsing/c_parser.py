@@ -4,6 +4,8 @@
 from typing import TYPE_CHECKING, Any, NoReturn, Optional, TypedDict, TypeVar, Union, overload
 
 from sly import Parser
+from sly.lex import Token
+from sly.yacc import YaccProduction as YaccProd, YaccSymbol
 
 from . import c_ast, c_context
 from ._cluegen import Datum
@@ -167,10 +169,9 @@ def fix_switch_cases(switch_node: c_ast.Switch) -> c_ast.Switch:
 
     Notes
     -----
-    The "case" statements in a "switch" come out of parsing with one
-    child node, so subsequent statements are just tucked to the parent
-    Compound. Additionally, consecutive (fall-through) case statements
-    come out messy. This is a peculiarity of the C grammar.
+    The "case" statements in a "switch" come out of parsing with one child node, so subsequent statements are just
+    tucked to the parent Compound. Additionally, consecutive (fall-through) case statements come out messy. This is a
+    peculiarity of the C grammar.
 
     The following:
 
@@ -224,9 +225,9 @@ def fix_switch_cases(switch_node: c_ast.Switch) -> c_ast.Switch:
     if not isinstance(switch_node.stmt, c_ast.Compound):
         return switch_node
 
-    # The new Compound child for the Switch, which will collect children in the
-    # correct order
+    # The new Compound child for the Switch, which will collect children in the correct order
     new_compound = c_ast.Compound([], coord=switch_node.stmt.coord)
+    assert isinstance(new_compound.block_items, list)
 
     # The last Case/Default node
     last_case: Optional[Union[c_ast.Case, c_ast.Default]] = None
@@ -236,16 +237,14 @@ def fix_switch_cases(switch_node: c_ast.Switch) -> c_ast.Switch:
     # (for `switch(cond) {}`, block_items would have been None)
     for child in switch_node.stmt.block_items or []:
         if isinstance(child, (c_ast.Case, c_ast.Default)):
-            # If it's a Case/Default:
+            # If it's a Case or Default:
             # 1. Add it to the Compound and mark as "last case"
-            # 2. If its immediate child is also a Case or Default, promote it
-            #    to a sibling.
+            # 2. If its immediate child is also a Case or Default, promote it to a sibling.
             new_compound.block_items.append(child)
             _extract_nested_case(child, new_compound.block_items)
             last_case = new_compound.block_items[-1]
         else:
-            # Other statements are added as children to the last case, if it
-            # exists.
+            # Other statements are added as children to the last case, if it exists.
             if last_case is None:
                 new_compound.block_items.append(child)
             else:
@@ -360,7 +359,7 @@ class CParser(Parser):
         """
 
         is_typedef = "typedef" in spec.storage
-        declarations: list[Any] = []
+        declarations: list[c_ast.Decl] = []
 
         decls_0 = decls[0]
 
@@ -372,7 +371,7 @@ class CParser(Parser):
             # When redeclaring typedef names as identifiers in inner scopes, a problem can occur where the identifier
             # gets grouped into spec.type, leaving decl as None. This can only occur for the first declarator.
             if len(spec.type) < 2 or len(spec.type[-1].names) != 1 or not self.is_type_in_scope(spec.type[-1].names[0]):
-                coord = next((t.coord for t in spec.type if hasattr(t, "coord")), "?")
+                coord = next((t.coord for t in spec.type if hasattr(t, "coord")), None)
                 msg = "Invalid declaration"
                 self.ctx.error(msg, coord)
 
@@ -397,26 +396,22 @@ class CParser(Parser):
                 decls_0_tail.declname = spec.type.pop(-1).names[0]
 
         for decl in decls:
-            assert decl["decl"] is not None
+            typ = decl["decl"]
+            assert typ is not None
+
             if is_typedef:
-                declaration = c_ast.Typedef(
-                    name=None,
-                    quals=spec.qual,
-                    storage=spec.storage,
-                    type=decl["decl"],
-                    coord=decl["decl"].coord,
-                )
+                declaration = c_ast.Typedef(None, spec.qual, spec.storage, typ, coord=typ.coord)
             else:
                 declaration = c_ast.Decl(
-                    name=None,
-                    quals=spec.qual,
-                    align=spec.alignment,
-                    storage=spec.storage,
-                    funcspec=spec.function,
-                    type=decl["decl"],
-                    init=decl.get("init"),
-                    bitsize=decl.get("bitsize"),
-                    coord=decl["decl"].coord,
+                    None,
+                    typ,
+                    spec.qual,
+                    spec.alignment,
+                    spec.storage,
+                    spec.function,
+                    decl.get("init"),
+                    decl.get("bitsize"),
+                    coord=typ.coord,
                 )
 
             if isinstance(declaration.type, (c_ast.Enum, c_ast.Struct, c_ast.Union, c_ast.IdType)):
@@ -426,6 +421,7 @@ class CParser(Parser):
 
             # Add the type name defined by typedef to a symbol table (for usage in the lexer)
             if typedef_namespace:
+                assert isinstance(fixed_decl.name, str)
                 if is_typedef:
                     self.add_typedef_name_to_scope(fixed_decl.name, fixed_decl.coord)
                 else:
@@ -436,7 +432,13 @@ class CParser(Parser):
 
         return declarations
 
-    def _build_function_definition(self, spec: _DeclarationSpecifiers, decl: Any, param_decls: Any, body: Any) -> Any:
+    def _build_function_definition(
+        self,
+        spec: _DeclarationSpecifiers,
+        decl: Union[c_ast.TypeDecl, c_ast.TypeModifier, c_ast.Enum, c_ast.Struct, c_ast.Union, c_ast.IdType],
+        param_decls: Optional[list[c_ast.Decl]],
+        body: c_ast.Compound,
+    ) -> c_ast.FuncDef:
         """Builds a function definition."""
 
         if "typedef" in spec.storage:
@@ -523,7 +525,7 @@ class CParser(Parser):
     # ============================================================================
 
     @_("{ external_declaration }")
-    def translation_unit(self, p: Any):
+    def translation_unit(self, p: YaccProd):
         """Handle a translation unit.
 
         Notes
@@ -531,11 +533,11 @@ class CParser(Parser):
         This allows empty input. Not strictly part of the C99 Grammar, but useful in practice.
         """
 
-        # NOTE: external_declaration is already a list
+        # NOTE: external_declaration is already a list, so now it's a list of lists.
         return c_ast.File([e for ext_decl in p.external_declaration for e in ext_decl])
 
     @_("function_definition")
-    def external_declaration(self, p: Any):
+    def external_declaration(self, p: YaccProd):
         """Handle an external declaration.
 
         Notes
@@ -547,57 +549,57 @@ class CParser(Parser):
         return [p.function_definition]
 
     @_("declaration")
-    def external_declaration(self, p: Any):
+    def external_declaration(self, p: YaccProd):
         return p.declaration
 
-    @_("pp_directive", "pppragma_directive")
-    def external_declaration(self, p: Any):
+    @_("pp_directive", "pp_pragma_directive")
+    def external_declaration(self, p: YaccProd):
         return [p[0]]
 
     @_('";"')
-    def external_declaration(self, p: Any) -> list[Any]:
+    def external_declaration(self, p: YaccProd) -> list[c_ast.AST]:
         return []
 
     @_("static_assert")
-    def external_declaration(self, p: Any):
+    def external_declaration(self, p: YaccProd):
         return [p.static_assert]
 
     @_('STATIC_ASSERT_ "(" constant_expression [ "," unified_string_literal ] ")"')
-    def static_assert(self, p: Any):
+    def static_assert(self, p: YaccProd):
         return c_ast.StaticAssert(p.constant_expression, p.unified_string_literal, coord=Coord.from_prod(p, self))
 
     @_("PP_HASH")
-    def pp_directive(self, p: Any):
+    def pp_directive(self, p: YaccProd):
         msg = "Directives not supported yet"
         self.ctx.error(msg, Coord.from_prod(p, self))
 
     @_("PP_PRAGMA")
-    def pppragma_directive(self, p: Any):
+    def pp_pragma_directive(self, p: YaccProd):
         """Handle a preprocessor pragma directive or a _Pragma operator.
 
         Notes
         -----
         These encompass two types of C99-compatible pragmas:
-        - The #pragma directive: `# pragma character_sequence`
-        - The _Pragma unary operator: `_Pragma ( " string_literal " )`
+        - The #pragma directive: "# pragma character_sequence"
+        - The _Pragma unary operator: '_Pragma ( " string_literal " )'
         """
 
         return c_ast.Pragma("", coord=Coord.from_prod(p, self))
 
     @_("PP_PRAGMA PP_PRAGMASTR")
-    def pppragma_directive(self, p: Any):
+    def pp_pragma_directive(self, p: YaccProd):
         return c_ast.Pragma(p.PP_PRAGMASTR, coord=Coord.from_prod(p, self))
 
     @_('PRAGMA_ "(" unified_string_literal ")"')
-    def pppragma_directive(self, p: Any):
+    def pp_pragma_directive(self, p: YaccProd):
         return c_ast.Pragma(p.unified_string_literal, coord=Coord.from_prod(p, self))
 
-    @_("pppragma_directive { pppragma_directive }")
-    def pppragma_directive_list(self, p: Any):
-        return [p.pppragma_directive0, *p.pppragma_directive1]
+    @_("pp_pragma_directive { pp_pragma_directive }")
+    def pp_pragma_directive_list(self, p: YaccProd):
+        return [p.pp_pragma_directive0, *p.pp_pragma_directive1]
 
     @_("[ declaration_specifiers ] id_declarator { declaration } compound_statement")
-    def function_definition(self, p: Any):
+    def function_definition(self, p: YaccProd):
         """Handle a function declaration.
 
         Notes
@@ -605,6 +607,8 @@ class CParser(Parser):
         In function definitions, the declarator can be followed by a declaration list, for old "K&R style"
         function definitions.
         """
+
+        print("---- Should be here.")
 
         if p.declaration_specifiers:
             spec: _DeclarationSpecifiers = p.declaration_specifiers
@@ -626,10 +630,10 @@ class CParser(Parser):
         "selection_statement",
         "iteration_statement",
         "jump_statement",
-        "pppragma_directive",
+        "pp_pragma_directive",
         "static_assert",
     )
-    def statement(self, p: Any):
+    def statement(self, p: YaccProd):
         """Handle a statement.
 
         Notes
@@ -640,8 +644,8 @@ class CParser(Parser):
 
         return p[0]
 
-    @_("pppragma_directive_list statement")
-    def pragmacomp_or_statement(self, p: Any):
+    @_("pp_pragma_directive_list statement")
+    def pragmacomp_or_statement(self, p: YaccProd):
         """Handles a pragma or a statement.
 
         Notes
@@ -688,19 +692,19 @@ class CParser(Parser):
         """
 
         return c_ast.Compound(
-            block_items=[*p.pppragma_directive_list, p.statement],
-            coord=p.pppragma_directive_list.coord,
+            block_items=[*p.pp_pragma_directive_list, p.statement],
+            coord=p.pp_pragma_directive_list.coord,
         )
 
     @_("statement")
-    def pragmacomp_or_statement(self, p: Any):
+    def pragmacomp_or_statement(self, p: YaccProd):
         return p.statement
 
     @_(
         "declaration_specifiers [ init_declarator_list ]",
         "declaration_specifiers_no_type [ id_init_declarator_list ]",
     )
-    def decl_body(self, p: Any):
+    def decl_body(self, p: YaccProd):
         """Handle declaration bodies.
 
         Notes
@@ -723,30 +727,26 @@ class CParser(Parser):
         #
         declarator_list = p[1][0]
         if declarator_list is None:
-            # By the standard, you must have at least one declarator unless
-            # declaring a structure tag, a union tag, or the members of an
-            # enumeration.
+            # By the standard, you must have at least one declarator unless declaring a structure tag, a union tag,
+            # or the members of an enumeration.
             #
-            ty = spec.type
-            if len(ty) == 1 and isinstance(ty[0], (c_ast.Struct, c_ast.Union, c_ast.Enum)):
+            spec_ty = spec.type
+            if len(spec_ty) == 1 and isinstance(spec_ty[0], (c_ast.Struct, c_ast.Union, c_ast.Enum)):
                 decls = [
                     c_ast.Decl(
-                        name=None,
+                        None,
+                        spec_ty[0],
                         quals=spec.qual,
                         align=spec.alignment,
                         storage=spec.storage,
                         funcspec=spec.function,
-                        type=ty[0],
-                        init=None,
-                        bitsize=None,
-                        coord=ty[0].coord,
+                        coord=spec_ty[0].coord,
                     )
                 ]
 
-            # However, this case can also occur on redeclared identifiers in
-            # an inner scope.  The trouble is that the redeclared type's name
-            # gets grouped into declaration_specifiers; _build_declarations
-            # compensates for this.
+            # However, this case can also occur on redeclared identifiers in an inner scope. The trouble is that
+            # the redeclared type's name gets grouped into declaration_specifiers; _build_declarations compensates
+            # for this.
             #
             else:
                 decls = self._build_declarations(spec, decls=[{"decl": None, "init": None}], typedef_namespace=True)
@@ -757,7 +757,7 @@ class CParser(Parser):
         return decls
 
     @_('decl_body ";"')
-    def declaration(self, p: Any):
+    def declaration(self, p: YaccProd):
         """Handle a declaration.
 
         Notes
@@ -776,77 +776,82 @@ class CParser(Parser):
 
         return p.decl_body
 
-    @_(
-        "type_qualifier [ declaration_specifiers_no_type ]",
-        "storage_class_specifier [ declaration_specifiers_no_type ]",
-        "function_specifier [ declaration_specifiers_no_type ]",
-        # Without this, `typedef _Atomic(T) U` will parse incorrectly because the
-        # _Atomic qualifier will match instead of the specifier.
-        "atomic_specifier [ declaration_specifiers_no_type ]",
-        "alignment_specifier [ declaration_specifiers_no_type ]",
-    )
-    def declaration_specifiers_no_type(self, p: Any):
+    @_("type_qualifier [ declaration_specifiers_no_type ]")
+    def declaration_specifiers_no_type(self, p: YaccProd):
         """Handle declaration specifiers "without a type".
 
         Notes
         -----
-        To know when declaration-specifiers end and declarators begin,
-        we require the following:
+        To know when declaration-specifiers end and declarators begin, we require the following:
 
-        1. declaration-specifiers must have at least one type-specifier
+        1. declaration-specifiers must have at least one type-specifier.
         2. No typedef-names are allowed after we've seen any type-specifier.
 
         These are both required by the spec.
         """
 
-        # fmt: off
-        qualifiers_or_specifiers = {
-            "type_qualifier":           "qual",
-            "storage_class_specifier":  "storage",
-            "function_specifier":       "function",
-            "atomic_specifier":         "type",
-            "alignment_specifier":      "alignment",
-        }
-        # fmt: on
+        return _DeclarationSpecifiers.add(p.declaration_specifiers_no_type, p[0], "qual")
 
-        decl_kind = next(kind for qual_or_spec, kind in qualifiers_or_specifiers.items() if hasattr(p, qual_or_spec))
-        return _DeclarationSpecifiers.add(p.declaration_specifiers_no_type, p[0], decl_kind)
+    # region -- declaration_specifiers_no_type
 
-    @_(
-        "declaration_specifiers type_qualifier",
-        "declaration_specifiers storage_class_specifier",
-        "declaration_specifiers function_specifier",
-        "declaration_specifiers type_specifier_no_typeid",
-        "declaration_specifiers alignment_specifier",
-    )
-    def declaration_specifiers(self, p: Any):
-        # fmt: off
-        qualifiers_or_specifiers = {
-            "type_qualifier":           "qual",
-            "storage_class_specifier":  "storage",
-            "function_specifier":       "function",
-            "type_specifier_no_typeid": "type",
-            "alignment_specifier":      "alignment",
-        }
-        # fmt: on
+    @_("storage_class_specifier [ declaration_specifiers_no_type ]")
+    def declaration_specifiers_no_type(self, p: YaccProd):
+        return _DeclarationSpecifiers.add(p.declaration_specifiers_no_type, p[0], "storage")
 
-        decl_kind = next(kind for qual_or_spec, kind in qualifiers_or_specifiers.items() if hasattr(p, qual_or_spec))
-        return _DeclarationSpecifiers.add(p.declaration_specifiers, p[1], decl_kind, append=True)
+    @_("function_specifier [ declaration_specifiers_no_type ]")
+    def declaration_specifiers_no_type(self, p: YaccProd):
+        return _DeclarationSpecifiers.add(p.declaration_specifiers_no_type, p[0], "function")
+
+    @_("atomic_specifier [ declaration_specifiers_no_type ]")
+    def declaration_specifiers_no_type(self, p: YaccProd):
+        # Without this, `typedef _Atomic(T) U` will parse incorrectly because the
+        # _Atomic qualifier will match instead of the specifier.
+        return _DeclarationSpecifiers.add(p.declaration_specifiers_no_type, p[0], "type")
+
+    @_("alignment_specifier [ declaration_specifiers_no_type ]")
+    def declaration_specifiers_no_type(self, p: YaccProd):
+        return _DeclarationSpecifiers.add(p.declaration_specifiers_no_type, p[0], "alignment")
+
+    # endregion
+
+    # region -- declaration_specifiers
+
+    @_("declaration_specifiers type_qualifier")
+    def declaration_specifiers(self, p: YaccProd):
+        return _DeclarationSpecifiers.add(p.declaration_specifiers, p[1], "qual", append=True)
+
+    @_("declaration_specifiers storage_class_specifier")
+    def declaration_specifiers(self, p: YaccProd):
+        return _DeclarationSpecifiers.add(p.declaration_specifiers, p[1], "storage", append=True)
+
+    @_("declaration_specifiers function_specifier")
+    def declaration_specifiers(self, p: YaccProd):
+        return _DeclarationSpecifiers.add(p.declaration_specifiers, p[1], "function", append=True)
+
+    @_("declaration_specifiers type_specifier_no_typeid")
+    def declaration_specifiers(self, p: YaccProd):
+        return _DeclarationSpecifiers.add(p.declaration_specifiers, p[1], "type", append=True)
+
+    @_("declaration_specifiers alignment_specifier")
+    def declaration_specifiers(self, p: YaccProd):
+        return _DeclarationSpecifiers.add(p.declaration_specifiers, p[1], "alignment", append=True)
 
     @_("type_specifier")
-    def declaration_specifiers(self, p: Any):
+    def declaration_specifiers(self, p: YaccProd):
         return _DeclarationSpecifiers(type=[p.type_specifier])
 
     @_("declaration_specifiers_no_type type_specifier")
-    def declaration_specifiers(self, p: Any):
+    def declaration_specifiers(self, p: YaccProd):
         return _DeclarationSpecifiers.add(p.declaration_specifiers_no_type, p.type_specifier, "type", append=True)
 
+    # endregion
+
     @_("AUTO", "REGISTER", "STATIC", "EXTERN", "TYPEDEF", "THREAD_LOCAL_")
-    def storage_class_specifier(self, p: Any):
+    def storage_class_specifier(self, p: YaccProd):
         return p[0]
 
     @_("INLINE", "NORETURN_")
-    def function_specifier(self, p: Any):
+    def function_specifier(self, p: YaccProd):
         return p[0]
 
     @_(
@@ -863,15 +868,15 @@ class CParser(Parser):
         "UNSIGNED",
         "INT128",
     )
-    def type_specifier_no_typeid(self, p: Any):
+    def type_specifier_no_typeid(self, p: YaccProd):
         return c_ast.IdType([p[0]], coord=Coord.from_prod(p, self))
 
     @_("typedef_name", "enum_specifier", "struct_or_union_specifier", "type_specifier_no_typeid", "atomic_specifier")
-    def type_specifier(self, p: Any):
+    def type_specifier(self, p: YaccProd):
         return p[0]
 
     @_('ATOMIC_ "(" type_name ")"')
-    def atomic_specifier(self, p: Any):
+    def atomic_specifier(self, p: YaccProd):
         """Handle an atomic specifier from C11.
 
         Notes
@@ -884,15 +889,15 @@ class CParser(Parser):
         return typ
 
     @_("CONST", "RESTRICT", "VOLATILE", "ATOMIC_")
-    def type_qualifier(self, p: Any):
+    def type_qualifier(self, p: YaccProd):
         return p[0]
 
     @_('init_declarator { "," init_declarator }')
-    def init_declarator_list(self, p: Any):
+    def init_declarator_list(self, p: YaccProd):
         return [p.init_declarator0, *p.init_declarator1]
 
     @_("declarator [ EQUALS initializer ]")
-    def init_declarator(self, p: Any):
+    def init_declarator(self, p: YaccProd):
         """Handle an init declarator.
 
         Returns
@@ -904,41 +909,41 @@ class CParser(Parser):
         return {"decl": p.declarator, "init": p.initializer}
 
     @_('id_init_declarator { "," init_declarator }')
-    def id_init_declarator_list(self, p: Any):
+    def id_init_declarator_list(self, p: YaccProd):
         return [p.id_init_declarator, *p.init_declarator]
 
     @_("id_declarator [ EQUALS initializer ]")
-    def id_init_declarator(self, p: Any) -> dict[str, Any]:
+    def id_init_declarator(self, p: YaccProd) -> _StructDeclaratorDict:
         return {"decl": p.id_declarator, "init": p.initializer}
 
     @_("specifier_qualifier_list type_specifier_no_typeid")
-    def specifier_qualifier_list(self, p: Any):
+    def specifier_qualifier_list(self, p: YaccProd):
         """Handle a specifier qualifier list. At least one type specifier is required."""
 
         return _DeclarationSpecifiers.add(p.specifier_qualifier_list, p.type_specifier_no_typeid, "type", append=True)
 
     @_("specifier_qualifier_list type_qualifier")
-    def specifier_qualifier_list(self, p: Any):
+    def specifier_qualifier_list(self, p: YaccProd):
         return _DeclarationSpecifiers.add(p.specifier_qualifier_list, p.type_qualifier, "qual", append=True)
 
     @_("type_specifier")
-    def specifier_qualifier_list(self, p: Any):
+    def specifier_qualifier_list(self, p: YaccProd):
         return _DeclarationSpecifiers(type=[p.type_specifier])
 
     @_("type_qualifier_list type_specifier")
-    def specifier_qualifier_list(self, p: Any):
-        return _DeclarationSpecifiers(qual=p.type_qualifier_list, alignment=[p.type_specifier])
+    def specifier_qualifier_list(self, p: YaccProd):
+        return _DeclarationSpecifiers(qual=p.type_qualifier_list, type=[p.type_specifier])
 
     @_("alignment_specifier")
-    def specifier_qualifier_list(self, p: Any):
+    def specifier_qualifier_list(self, p: YaccProd):
         return _DeclarationSpecifiers(alignment=[p.alignment_specifier])
 
     @_("specifier_qualifier_list alignment_specifier")
-    def specifier_qualifier_list(self, p: Any):
+    def specifier_qualifier_list(self, p: YaccProd):
         return _DeclarationSpecifiers.add(p.specifier_qualifier_list, p.alignment_specifier, "alignment")
 
     @_("struct_or_union ID", "struct_or_union TYPEID")
-    def struct_or_union_specifier(self, p: Any):
+    def struct_or_union_specifier(self, p: YaccProd):
         """Handle a struct-or-union specifier.
 
         Notes
@@ -952,7 +957,7 @@ class CParser(Parser):
         return klass(name=p[1], decls=None, coord=Coord.from_prod(p, self))
 
     @_("struct_or_union lbrace { struct_declaration } rbrace")
-    def struct_or_union_specifier(self, p: Any):
+    def struct_or_union_specifier(self, p: YaccProd):
         klass = c_ast.Struct if (p.struct_or_union == "struct") else c_ast.Union
         # Empty sequence means an empty list of members
         decls = [decl for decl_list in p.struct_declaration for decl in decl_list if decl is not None]
@@ -963,21 +968,23 @@ class CParser(Parser):
         "struct_or_union ID lbrace { struct_declaration } rbrace",
         "struct_or_union TYPEID lbrace { struct_declaration } rbrace",
     )
-    def struct_or_union_specifier(self, p: Any):
+    def struct_or_union_specifier(self, p: YaccProd):
         klass = c_ast.Struct if (p.struct_or_union == "struct") else c_ast.Union
         # Empty sequence means an empty list of members
-        decls = [decl for decl_list in p.struct_declaration for decl in decl_list if decl is not None]
+        decls = [decl for decl_list in p.struct_declaration for decl in decl_list]
         coord = Coord.from_prod(p, self)
         return klass(name=p[1], decls=decls, coord=coord)
 
     @_("STRUCT", "UNION")
-    def struct_or_union(self, p: Any):
+    def struct_or_union(self, p: YaccProd):
         return p[0]
 
     @_('specifier_qualifier_list [ struct_declarator_list ] ";"')
-    def struct_declaration(self, p: Any):
+    def struct_declaration(self, p: YaccProd):
         spec: _DeclarationSpecifiers = p.specifier_qualifier_list
-        assert "typedef" not in spec.storage
+
+        if "typedef" in spec.storage:
+            raise AssertionError
 
         if p.struct_declarator_list is not None:
             decls = self._build_declarations(spec, decls=p.struct_declarator_list)
@@ -988,11 +995,7 @@ class CParser(Parser):
             # some compilers have typedefs here, and pycparser isn't about rejecting all invalid code.
             #
             node = spec.type[0]
-            if isinstance(node, c_ast.AST):
-                decl_type = node
-            else:
-                decl_type = c_ast.IdType(node)
-
+            decl_type = node if isinstance(node, c_ast.AST) else c_ast.IdType(node)
             decls = self._build_declarations(spec, decls=[{"decl": decl_type}])
 
         else:
@@ -1004,62 +1007,62 @@ class CParser(Parser):
         return decls
 
     @_('";"')
-    def struct_declaration(self, p: Any) -> list[Any]:
+    def struct_declaration(self, p: YaccProd) -> list[c_ast.AST]:
         return []
 
-    @_("pppragma_directive")
-    def struct_declaration(self, p: Any):
-        return [p.pppragma_directive]
+    @_("pp_pragma_directive")
+    def struct_declaration(self, p: YaccProd):
+        return [p.pp_pragma_directive]
 
     @_('struct_declarator { "," struct_declarator }')
-    def struct_declarator_list(self, p: Any):
+    def struct_declarator_list(self, p: YaccProd):
         return [p.struct_declarator0, *p.struct_declarator1]
 
     @_("declarator")
-    def struct_declarator(self, p: Any) -> _StructDeclaratorDict:
+    def struct_declarator(self, p: YaccProd) -> _StructDeclaratorDict:
         """Handle a struct declarator.
 
         Returns
         -------
         _StructDeclaratorDict
-            A dict with the keys "decl" (for the underlying declarator) and "bitsize" (for the bitsize).
+            A dict with the keys "decl", for the underlying declarator, and "bitsize", for the bitsize.
         """
 
         return {"decl": p.declarator, "bitsize": None}
 
     @_('declarator ":" constant_expression')
-    def struct_declarator(self, p: Any) -> _StructDeclaratorDict:
+    def struct_declarator(self, p: YaccProd) -> _StructDeclaratorDict:
         return {"decl": p.declarator, "bitsize": p.constant_expression}
 
     @_('":" constant_expression')
-    def struct_declarator(self, p: Any) -> _StructDeclaratorDict:
+    def struct_declarator(self, p: YaccProd) -> _StructDeclaratorDict:
         return {"decl": c_ast.TypeDecl(None, None, None, None), "bitsize": p.constant_expression}
 
     @_("ENUM ID", "ENUM TYPEID")
-    def enum_specifier(self, p: Any):
+    def enum_specifier(self, p: YaccProd):
         return c_ast.Enum(p[1], None, coord=Coord.from_prod(p, self))
 
     @_("ENUM lbrace enumerator_list rbrace")
-    def enum_specifier(self, p: Any):
+    def enum_specifier(self, p: YaccProd):
         return c_ast.Enum(None, p.enumerator_list, coord=Coord.from_prod(p, self))
 
     @_(
         "ENUM ID lbrace enumerator_list rbrace",
         "ENUM TYPEID lbrace enumerator_list rbrace",
     )
-    def enum_specifier(self, p: Any):
+    def enum_specifier(self, p: YaccProd):
         return c_ast.Enum(p[1], p.enumerator_list, coord=Coord.from_prod(p, self))
 
     @_("enumerator")
-    def enumerator_list(self, p: Any):
+    def enumerator_list(self, p: YaccProd):
         return c_ast.EnumeratorList([p.enumerator], coord=p.enumerator.coord)
 
     @_('enumerator_list ","')
-    def enumerator_list(self, p: Any):
+    def enumerator_list(self, p: YaccProd):
         return p.enumerator_list
 
     @_('enumerator_list "," enumerator')
-    def enumerator_list(self, p: Any):
+    def enumerator_list(self, p: YaccProd):
         p.enumerator_list.enumerators.append(p.enumerator)
         return p.enumerator_list
 
@@ -1067,17 +1070,17 @@ class CParser(Parser):
         'ALIGNAS_ "(" type_name ")"',
         'ALIGNAS_ "(" constant_expression ")"',
     )
-    def alignment_specifier(self, p: Any):
+    def alignment_specifier(self, p: YaccProd):
         return c_ast.Alignas(p[2], coord=Coord.from_prod(p, self))
 
     @_("ID [ EQUALS constant_expression ]")
-    def enumerator(self, p: Any):
+    def enumerator(self, p: YaccProd):
         enumerator = c_ast.Enumerator(p.ID, p.constant_expression, coord=Coord.from_prod(p, self))
         self.add_identifier_to_scope(enumerator.name, enumerator.coord)
         return enumerator
 
     @_("id_declarator", "typeid_declarator")
-    def declarator(self, p: Any):
+    def declarator(self, p: YaccProd):
         return p[0]
 
     # ========
@@ -1096,40 +1099,37 @@ class CParser(Parser):
 
     @subst_ids
     @_("direct_${_SUB1}_declarator")
-    def _SUB1_declarator(self, p: Any) -> Union[c_ast.TypeDecl, c_ast.TypeModifier]:
+    def _SUB1_declarator(self, p: YaccProd) -> Union[c_ast.TypeDecl, c_ast.TypeModifier]:
+        print("---- here 1")
+        print(c_ast.dump(p[0]))
         return p[0]
 
     @subst_ids
     @_("pointer direct_${_SUB1}_declarator")
-    def _SUB1_declarator(self, p: Any) -> Union[c_ast.TypeDecl, c_ast.TypeModifier]:
+    def _SUB1_declarator(self, p: YaccProd) -> Union[c_ast.TypeDecl, c_ast.TypeModifier]:
         return self._type_modify_decl(p[1], p.pointer)
 
     @subst_ids
     @_("${_SUB2}")
-    def direct__SUB1_declarator(self, p: Any):
+    def direct__SUB1_declarator(self, p: YaccProd):
+        print("---- here 3")
+        print(f"processed name {p[0]}")
         return c_ast.TypeDecl(declname=p[0], quals=None, coord=Coord.from_prod(p, self))
 
     @subst({"_SUB1": "id"}, {"_SUB1": "typeid"})
     @_('"(" ${_SUB1}_declarator ")"')
-    def direct__SUB1_declarator(self, p: Any):
+    def direct__SUB1_declarator(self, p: YaccProd):
         return p[1]
 
     @subst_ids
     @_('direct_${_SUB1}_declarator "[" [ type_qualifier_list ] [ assignment_expression ] "]"')
-    def direct__SUB1_declarator(self, p: Any):
-        if p.type_qualifier_list or p.assignment_expression:
-            dim = p.assignment_expression
-            dim_quals: list[Any] = p.type_qualifier_list or []
-        else:
-            dim = p.type_qualifier_list or p.assignment_expression
-            dim_quals = []
-
+    def direct__SUB1_declarator(self, p: YaccProd):
         # Accept dimension qualifiers
         # Per C99 6.7.5.3 p7
         arr = c_ast.ArrayDecl(
             type=None,  # pyright: ignore [reportArgumentType] # Gets fixed in _type_modify_decl.
-            dim=dim,
-            dim_quals=dim_quals,
+            dim=p.assignment_expression,
+            dim_quals=p.type_qualifier_list or [],
             coord=p[0].coord,
         )
 
@@ -1137,7 +1137,7 @@ class CParser(Parser):
 
     @subst_ids
     @_('direct_${_SUB1}_declarator "[" STATIC [ type_qualifier_list ] assignment_expression "]"')
-    def direct__SUB1_declarator(self, p: Any):
+    def direct__SUB1_declarator(self, p: YaccProd):
         if p.type_qualifier_list is not None:
             dim_quals = [qual for qual in (p.STATIC, *p.type_qualifier_list) if qual is not None]
         else:
@@ -1153,8 +1153,7 @@ class CParser(Parser):
 
     @subst_ids
     @_('direct_${_SUB1}_declarator "[" type_qualifier_list STATIC assignment_expression "]"')
-    def direct__SUB1_declarator(self, p: Any):
-        # listed_quals: Generator[list[Any]] = ((item if isinstance(item, list) else [item]) for item in [p[3], p[4]])
+    def direct__SUB1_declarator(self, p: YaccProd):
         dim_quals = [qual for qual in (*p.type_qualifier_list, p.STATIC) if qual is not None]
         arr = c_ast.ArrayDecl(
             type=None,  # pyright: ignore [reportArgumentType] # Gets fixed in _type_modify_decl.
@@ -1167,7 +1166,7 @@ class CParser(Parser):
 
     @subst_ids
     @_('direct_${_SUB1}_declarator "[" [ type_qualifier_list ] TIMES "]"')
-    def direct__SUB1_declarator(self, p: Any):
+    def direct__SUB1_declarator(self, p: YaccProd):
         """Special for VLAs."""
 
         arr = c_ast.ArrayDecl(
@@ -1184,15 +1183,13 @@ class CParser(Parser):
         'direct_${_SUB1}_declarator "(" parameter_type_list ")"',
         'direct_${_SUB1}_declarator "(" [ identifier_list ] ")"',
     )
-    def direct__SUB1_declarator(self, p: Any):
-        # NOTE: This first line depends on an implementation detail, optional components being in tuples when accessed
-        # with numerical index, to determine the difference.
+    def direct__SUB1_declarator(self, p: YaccProd):
+        print("---- here 9")
+        print(f"{self.lookahead=}")
+        # NOTE: This first line depends on an implementation detail -- optional components are in tuples when accessed
+        # with numerical index -- to determine the difference.
         args = p[2] if not isinstance(p[2], tuple) else p[2][0]
-        func = c_ast.FuncDecl(
-            args=args,
-            type=None,  # pyright: ignore [reportArgumentType] # Gets fixed in _type_modify_decl.
-            coord=p[0].coord,
-        )
+        func = c_ast.FuncDecl(args, type=None, coord=p[0].coord)  # pyright: ignore [reportArgumentType] # Gets fixed in _type_modify_decl.
 
         # To see why the lookahead token is needed, consider:
         #   typedef char TT;
@@ -1203,10 +1200,11 @@ class CParser(Parser):
         # read and incorrectly interpreted as TYPEID.
         # We need to add the parameters to the scope the moment the lexer sees lbrace.
         #
-        if self.lookahead and (self.lookahead.type == "{") and (func.args is not None):
+        if (self.lookahead is not None) and (self.lookahead.type == "{") and (func.args is not None):
             for param in func.args.params:
                 if isinstance(param, c_ast.EllipsisParam):
                     break
+                assert isinstance(param.name, str)
                 self.add_identifier_to_scope(param.name, param.coord)
 
         return self._type_modify_decl(decl=p[0], modifier=func)
@@ -1216,7 +1214,7 @@ class CParser(Parser):
     # endregion
 
     @_("TIMES [ type_qualifier_list ] [ pointer ]")
-    def pointer(self, p: Any):
+    def pointer(self, p: YaccProd):
         """Handle a pointer.
 
         Notes
@@ -1253,45 +1251,41 @@ class CParser(Parser):
             return nested_type
 
     @_("type_qualifier { type_qualifier }")
-    def type_qualifier_list(self, p: Any):
+    def type_qualifier_list(self, p: YaccProd):
         return [p.type_qualifier0, *p.type_qualifier1]
 
     @_("parameter_list")
-    def parameter_type_list(self, p: Any):
+    def parameter_type_list(self, p: YaccProd):
         return p.parameter_list
 
     @_('parameter_list "," ELLIPSIS')
-    def parameter_type_list(self, p: Any):
+    def parameter_type_list(self, p: YaccProd):
         p.parameter_list.params.append(c_ast.EllipsisParam(coord=Coord.from_prod(p, self)))
         return p.parameter_list
 
     @_('parameter_declaration { "," parameter_declaration }')
-    def parameter_list(self, p: Any):
-        # single parameter
-        return c_ast.ParamList(
-            [p.parameter_declaration0, *p.parameter_declaration1], coord=p.parameter_declaration0.coord
-        )
+    def parameter_list(self, p: YaccProd):
+        coord = p.parameter_declaration0.coord
+        return c_ast.ParamList([p.parameter_declaration0, *p.parameter_declaration1], coord=coord)
 
     @_(
         "declaration_specifiers id_declarator",
         "declaration_specifiers typeid_noparen_declarator",
     )
-    def parameter_declaration(self, p: Any):
+    def parameter_declaration(self, p: YaccProd):
         """Handle a parameter declaration.
 
         Notes
         -----
         From ISO/IEC 9899:TC2, 6.7.5.3.11:
 
-            "If, in a parameter declaration, an identifier can be treated either
-            as a typedef name or as a parameter name, it shall be taken as a
-            typedef name."
+            "If, in a parameter declaration, an identifier can be treated either as a typedef name or as a
+            parameter name, it shall be taken as a typedef name."
 
-        Inside a parameter declaration, once we've reduced declaration specifiers,
-        if we shift in an "(" and see a TYPEID, it could be either an abstract
-        declarator or a declarator nested inside parens. This rule tells us to
-        always treat it as an abstract declarator. Therefore, we only accept
-        `id_declarator`s and `typeid_noparen_declarator`s.
+        Inside a parameter declaration, once we've reduced declaration specifiers, if we shift in an "(" and see
+        a TYPEID, it could be either an abstract declarator or a declarator nested inside parens. This rule tells us to
+        always treat it as an abstract declarator. Therefore, we only accept `id_declarator`s and
+        `typeid_noparen_declarator`s.
         """
 
         spec: _DeclarationSpecifiers = p.declaration_specifiers
@@ -1300,7 +1294,7 @@ class CParser(Parser):
         return self._build_declarations(spec, decls=[{"decl": p[1]}])[0]
 
     @_("declaration_specifiers [ abstract_declarator ]")
-    def parameter_declaration(self, p: Any):
+    def parameter_declaration(self, p: YaccProd):
         spec: _DeclarationSpecifiers = p.declaration_specifiers
         if not spec.type:
             spec.type = [c_ast.IdType(["int"], coord=Coord.from_node(p.declaration_specifiers, self))]
@@ -1325,40 +1319,41 @@ class CParser(Parser):
         return decl
 
     @_('identifier { "," identifier }')
-    def identifier_list(self, p: Any):
+    def identifier_list(self, p: YaccProd):
         return c_ast.ParamList([p.identifier0, *p.identifier1], coord=p.identifier0.coord)
 
     @_("assignment_expression")
-    def initializer(self, p: Any):
+    def initializer(self, p: YaccProd):
         return p.assignment_expression
 
     @_(
         "lbrace [ initializer_list ] rbrace",
         'lbrace initializer_list "," rbrace',
     )
-    def initializer(self, p: Any):
+    def initializer(self, p: YaccProd):
+        print("---- here 42")
         if p.initializer_list is not None:
             return p.initializer_list
         else:
             return c_ast.InitList([], coord=Coord.from_prod(p, self))
 
     @_("[ designation ] initializer")
-    def initializer_list(self, p: Any):
+    def initializer_list(self, p: YaccProd):
         init = p.initializer if (p.designation is None) else c_ast.NamedInitializer(p.designation, p.initializer)
         return c_ast.InitList([init], coord=p.initializer.coord)
 
     @_('initializer_list "," [ designation ] initializer')
-    def initializer_list(self, p: Any):
+    def initializer_list(self, p: YaccProd):
         init = p.initializer if (p.designation is None) else c_ast.NamedInitializer(p.designation, p.initializer)
         p.initializer_list.exprs.append(init)
         return p.initializer_list
 
     @_("designator_list EQUALS")
-    def designation(self, p: Any):
+    def designation(self, p: YaccProd):
         return p.designator_list
 
     @_("designator { designator }")
-    def designator_list(self, p: Any):
+    def designator_list(self, p: YaccProd):
         """Handle a list of designators.
 
         Notes
@@ -1370,11 +1365,11 @@ class CParser(Parser):
         return [p.designator0, *p.designator1]
 
     @_('"[" constant_expression "]"', '"." identifier')
-    def designator(self, p: Any):
+    def designator(self, p: YaccProd):
         return p[1]
 
     @_("specifier_qualifier_list [ abstract_declarator ]")
-    def type_name(self, p: Any):
+    def type_name(self, p: YaccProd):
         spec_list: _DeclarationSpecifiers = p.specifier_qualifier_list
         typename = c_ast.Typename(
             name="",
@@ -1387,16 +1382,16 @@ class CParser(Parser):
         return self._fix_decl_name_type(typename, spec_list.type)
 
     @_("pointer")
-    def abstract_declarator(self, p: Any):
+    def abstract_declarator(self, p: YaccProd):
         dummytype = c_ast.TypeDecl(None, None, None, None)
         return self._type_modify_decl(decl=dummytype, modifier=p.pointer)
 
     @_("pointer direct_abstract_declarator")
-    def abstract_declarator(self, p: Any):
+    def abstract_declarator(self, p: YaccProd):
         return self._type_modify_decl(p.direct_abstract_declarator, p.pointer)
 
     @_("direct_abstract_declarator")
-    def abstract_declarator(self, p: Any):
+    def abstract_declarator(self, p: YaccProd):
         return p.direct_abstract_declarator
 
     # Creating and using direct_abstract_declarator_opt here
@@ -1405,11 +1400,11 @@ class CParser(Parser):
     # shift/reduce errors.
     #
     @_('"(" abstract_declarator ")"')
-    def direct_abstract_declarator(self, p: Any):
+    def direct_abstract_declarator(self, p: YaccProd):
         return p.abstract_declarator
 
     @_('direct_abstract_declarator "[" [ assignment_expression ] "]"')
-    def direct_abstract_declarator(self, p: Any):
+    def direct_abstract_declarator(self, p: YaccProd):
         arr = c_ast.ArrayDecl(
             type=None,  # pyright: ignore [reportArgumentType] # Gets fixed in _type_modify_decl.
             dim=p.assignment_expression,
@@ -1420,15 +1415,15 @@ class CParser(Parser):
         return self._type_modify_decl(decl=p.direct_abstract_declarator, modifier=arr)
 
     @_('"[" [ type_qualifier_list ] [ assignment_expression ] "]"')
-    def direct_abstract_declarator(self, p: Any):
+    def direct_abstract_declarator(self, p: YaccProd):
         dim = p.assignment_expression
-        dim_quals: list[Any] = p.type_qualifier_list or []
+        dim_quals: list[str] = p.type_qualifier_list or []
         type_ = c_ast.TypeDecl(None, None, None, None)
 
         return c_ast.ArrayDecl(type=type_, dim=dim, dim_quals=dim_quals, coord=Coord.from_prod(p, self))
 
     @_('direct_abstract_declarator "[" TIMES "]"')
-    def direct_abstract_declarator(self, p: Any):
+    def direct_abstract_declarator(self, p: YaccProd):
         arr = c_ast.ArrayDecl(
             type=None,  # pyright: ignore [reportArgumentType] # Gets fixed in _type_modify_decl.
             dim=c_ast.Id(p.TIMES, coord=Coord.from_prod(p, self)),
@@ -1439,7 +1434,7 @@ class CParser(Parser):
         return self._type_modify_decl(decl=p.direct_abstract_declarator, modifier=arr)
 
     @_('"[" TIMES "]"')
-    def direct_abstract_declarator(self, p: Any):
+    def direct_abstract_declarator(self, p: YaccProd):
         return c_ast.ArrayDecl(
             type=c_ast.TypeDecl(None, None, None, None),
             dim=c_ast.Id(p[2], coord=Coord.from_prod(p, self)),
@@ -1448,7 +1443,7 @@ class CParser(Parser):
         )
 
     @_('direct_abstract_declarator "(" [ parameter_type_list ] ")"')
-    def direct_abstract_declarator(self, p: Any):
+    def direct_abstract_declarator(self, p: YaccProd):
         func = c_ast.FuncDecl(
             args=p.parameter_type_list,
             type=None,  # pyright: ignore [reportArgumentType] # Gets fixed in _type_modify_decl.
@@ -1457,7 +1452,7 @@ class CParser(Parser):
         return self._type_modify_decl(decl=p.direct_abstract_declarator, modifier=func)
 
     @_('"(" [ parameter_type_list ] ")"')
-    def direct_abstract_declarator(self, p: Any):
+    def direct_abstract_declarator(self, p: YaccProd):
         return c_ast.FuncDecl(
             args=p.parameter_type_list,
             type=c_ast.TypeDecl(None, None, None, None),
@@ -1465,7 +1460,7 @@ class CParser(Parser):
         )
 
     @_("declaration", "statement")
-    def block_item(self, p: Any) -> list[Any]:
+    def block_item(self, p: YaccProd) -> list[c_ast.AST]:
         """Handle a block item.
 
         Notes
@@ -1474,14 +1469,10 @@ class CParser(Parser):
         """
 
         item = p[0]
-
-        if isinstance(item, list):
-            return item  # pyright: ignore [reportUnknownVariableType]
-        else:
-            return [item]
+        return item if isinstance(item, list) else [item]  # pyright: ignore [reportUnknownVariableType]
 
     @_("lbrace { block_item } rbrace")
-    def compound_statement(self, p: Any):
+    def compound_statement(self, p: YaccProd):
         """Handle a compound statement.
 
         Notes
@@ -1490,47 +1481,48 @@ class CParser(Parser):
         so ignore them.
         """
 
+        print("---- here 48290")
         block_items = [item for item_list in p.block_item for item in item_list if item is not None]
         return c_ast.Compound(block_items=block_items, coord=Coord.from_prod(p, self))
 
     @_('ID ":" pragmacomp_or_statement')
-    def labeled_statement(self, p: Any):
+    def labeled_statement(self, p: YaccProd):
         return c_ast.Label(p.ID, p.pragmacomp_or_statement, coord=Coord.from_prod(p, self))
 
     @_('CASE constant_expression ":" pragmacomp_or_statement')
-    def labeled_statement(self, p: Any):
+    def labeled_statement(self, p: YaccProd):
         return c_ast.Case(p.constant_expression, [p.pragmacomp_or_statement], coord=Coord.from_prod(p, self))
 
     @_('DEFAULT ":" pragmacomp_or_statement')
-    def labeled_statement(self, p: Any):
+    def labeled_statement(self, p: YaccProd):
         return c_ast.Default([p.pragmacomp_or_statement], coord=Coord.from_prod(p, self))
 
     @_('IF "(" expression ")" pragmacomp_or_statement')
-    def selection_statement(self, p: Any):
+    def selection_statement(self, p: YaccProd):
         return c_ast.If(p[2], p[4], None, coord=Coord.from_prod(p, self))
 
     @_('IF "(" expression ")" statement ELSE pragmacomp_or_statement')
-    def selection_statement(self, p: Any):
+    def selection_statement(self, p: YaccProd):
         return c_ast.If(p[2], p[4], p[6], coord=Coord.from_prod(p, self))
 
     @_('SWITCH "(" expression ")" pragmacomp_or_statement')
-    def selection_statement(self, p: Any):
+    def selection_statement(self, p: YaccProd):
         return fix_switch_cases(c_ast.Switch(p.expression, p.pragmacomp_or_statement, coord=Coord.from_prod(p, self)))
 
     @_('WHILE "(" expression ")" pragmacomp_or_statement')
-    def iteration_statement(self, p: Any):
+    def iteration_statement(self, p: YaccProd):
         return c_ast.While(p.expression, p.pragmacomp_or_statement, coord=Coord.from_prod(p, self))
 
     @_('DO pragmacomp_or_statement WHILE "(" expression ")" ";"')
-    def iteration_statement(self, p: Any):
+    def iteration_statement(self, p: YaccProd):
         return c_ast.DoWhile(p.expression, p.pragmacomp_or_statement, coord=Coord.from_prod(p, self))
 
     @_('FOR "(" [ expression ] ";" [ expression ] ";" [ expression ] ")" pragmacomp_or_statement')
-    def iteration_statement(self, p: Any):
+    def iteration_statement(self, p: YaccProd):
         return c_ast.For(p.expression0, p.expression1, p.expression2, p[8], coord=Coord.from_prod(p, self))
 
     @_('FOR "(" declaration [ expression ] ";" [ expression ] ")" pragmacomp_or_statement')
-    def iteration_statement(self, p: Any):
+    def iteration_statement(self, p: YaccProd):
         coord = Coord.from_prod(p, self)
         return c_ast.For(
             c_ast.DeclList(p.declaration, coord=coord),
@@ -1541,34 +1533,34 @@ class CParser(Parser):
         )
 
     @_('GOTO ID ";"')
-    def jump_statement(self, p: Any):
+    def jump_statement(self, p: YaccProd):
         return c_ast.Goto(p.ID, coord=Coord.from_prod(p, self))
 
     @_('BREAK ";"')
-    def jump_statement(self, p: Any):
+    def jump_statement(self, p: YaccProd):
         return c_ast.Break(coord=Coord.from_prod(p, self))
 
     @_('CONTINUE ";"')
-    def jump_statement(self, p: Any):
+    def jump_statement(self, p: YaccProd):
         return c_ast.Continue(coord=Coord.from_prod(p, self))
 
     @_('RETURN [ expression ] ";"')
-    def jump_statement(self, p: Any):
+    def jump_statement(self, p: YaccProd):
         return c_ast.Return(p.expression, coord=Coord.from_prod(p, self))
 
     @_('[ expression ] ";"')
-    def expression_statement(self, p: Any):
-        if p.expression is None:
-            return c_ast.EmptyStatement(coord=Coord.from_prod(p, self))
-        else:
+    def expression_statement(self, p: YaccProd):
+        if p.expression is not None:
             return p.expression
+        else:
+            return c_ast.EmptyStatement(coord=Coord.from_prod(p, self))
 
     @_("assignment_expression")
-    def expression(self, p: Any):
+    def expression(self, p: YaccProd):
         return p.assignment_expression
 
     @_('expression "," assignment_expression')
-    def expression(self, p: Any):
+    def expression(self, p: YaccProd):
         if not isinstance(p.expression, c_ast.ExprList):
             p.expression = c_ast.ExprList([p.expression], coord=p.expression.coord)
 
@@ -1576,20 +1568,20 @@ class CParser(Parser):
         return p.expression
 
     @_("TYPEID")
-    def typedef_name(self, p: Any):
+    def typedef_name(self, p: YaccProd):
         return c_ast.IdType([p.TYPEID], coord=Coord.from_prod(p, self))
 
     @_('"(" compound_statement ")"')
-    def assignment_expression(self, p: Any):
+    def assignment_expression(self, p: YaccProd):
         # TODO: Verify that the original name "parenthesized_compound_expression", isn't meaningful.
         return p.compound_statement
 
     @_("conditional_expression")
-    def assignment_expression(self, p: Any):
+    def assignment_expression(self, p: YaccProd):
         return p.conditional_expression
 
     @_("unary_expression assignment_operator assignment_expression")
-    def assignment_expression(self, p: Any):
+    def assignment_expression(self, p: YaccProd):
         return c_ast.Assignment(
             p.assignment_operator,
             p.unary_expression,
@@ -1610,7 +1602,7 @@ class CParser(Parser):
         "ANDEQUAL",
         "OREQUAL",
     )
-    def assignment_operator(self, p: Any):
+    def assignment_operator(self, p: YaccProd):
         """Handle assignment operators.
 
         Notes
@@ -1623,15 +1615,15 @@ class CParser(Parser):
         return p[0]
 
     @_("conditional_expression")
-    def constant_expression(self, p: Any):
+    def constant_expression(self, p: YaccProd):
         return p.conditional_expression
 
     @_("binary_expression")
-    def conditional_expression(self, p: Any):
+    def conditional_expression(self, p: YaccProd):
         return p.binary_expression
 
     @_('binary_expression CONDOP expression ":" conditional_expression')
-    def conditional_expression(self, p: Any):
+    def conditional_expression(self, p: YaccProd):
         return c_ast.TernaryOp(
             p.binary_expression,
             p.expression,
@@ -1640,7 +1632,7 @@ class CParser(Parser):
         )
 
     @_("cast_expression")
-    def binary_expression(self, p: Any):
+    def binary_expression(self, p: YaccProd):
         return p.cast_expression
 
     @_(
@@ -1663,47 +1655,47 @@ class CParser(Parser):
         "binary_expression LAND binary_expression",
         "binary_expression LOR binary_expression",
     )
-    def binary_expression(self, p: Any):
+    def binary_expression(self, p: YaccProd):
         return c_ast.BinaryOp(p[1], p[0], p[2], coord=p[0].coord)
 
     @_("unary_expression")
-    def cast_expression(self, p: Any):
+    def cast_expression(self, p: YaccProd):
         return p.unary_expression
 
     @_('"(" type_name ")" cast_expression')
-    def cast_expression(self, p: Any):
+    def cast_expression(self, p: YaccProd):
         return c_ast.Cast(p.type_name, p.cast_expression, coord=Coord.from_prod(p, self))
 
     @_("postfix_expression")
-    def unary_expression(self, p: Any):
+    def unary_expression(self, p: YaccProd):
         return p.postfix_expression
 
     @_("PLUSPLUS unary_expression", "MINUSMINUS unary_expression", "unary_operator cast_expression")
-    def unary_expression(self, p: Any):
+    def unary_expression(self, p: YaccProd):
         return c_ast.UnaryOp(p[0], p[1], coord=p[1].coord)
 
     @_("SIZEOF unary_expression")
-    def unary_expression(self, p: Any):
+    def unary_expression(self, p: YaccProd):
         return c_ast.UnaryOp(p[0], p[1], coord=Coord.from_prod(p, self))
 
     @_('SIZEOF "(" type_name ")"', 'ALIGNOF_ "(" type_name ")"')
-    def unary_expression(self, p: Any):
+    def unary_expression(self, p: YaccProd):
         return c_ast.UnaryOp(p[0], p.type_name, coord=Coord.from_prod(p, self))
 
     @_("AND", "TIMES", "PLUS", "MINUS", "NOT", "LNOT")
-    def unary_operator(self, p: Any):
+    def unary_operator(self, p: YaccProd):
         return p[0]
 
     @_("primary_expression")
-    def postfix_expression(self, p: Any):
+    def postfix_expression(self, p: YaccProd):
         return p.primary_expression
 
     @_('postfix_expression "[" expression "]"')
-    def postfix_expression(self, p: Any):
+    def postfix_expression(self, p: YaccProd):
         return c_ast.ArrayRef(p.postfix_expression, p.expression, coord=p.postfix_expression.coord)
 
     @_('postfix_expression "(" assignment_expression { "," assignment_expression } ")"')
-    def postfix_expression(self, p: Any):
+    def postfix_expression(self, p: YaccProd):
         arg_expr = c_ast.ExprList(
             [p.assignment_expression0, *p.assignment_expression1],
             coord=p.assignment_expression0.coord,
@@ -1716,28 +1708,28 @@ class CParser(Parser):
         "postfix_expression ARROW ID",
         "postfix_expression ARROW TYPEID",
     )
-    def postfix_expression(self, p: Any):
+    def postfix_expression(self, p: YaccProd):
         field = c_ast.Id(p[2], coord=Coord.from_prod(p, self))
         return c_ast.StructRef(p.postfix_expression, p[1], field, coord=p.postfix_expression.coord)
 
     @_("postfix_expression PLUSPLUS", "postfix_expression MINUSMINUS")
-    def postfix_expression(self, p: Any):
+    def postfix_expression(self, p: YaccProd):
         return c_ast.UnaryOp("p" + p[1], p.postfix_expression, coord=p[1].coord)
 
     @_('"(" type_name ")" lbrace initializer_list [ "," ] rbrace')
-    def postfix_expression(self, p: Any):
+    def postfix_expression(self, p: YaccProd):
         return c_ast.CompoundLiteral(p.type_name, p.initializer_list)
 
     @_("identifier", "constant", "unified_string_literal", "unified_wstring_literal")
-    def primary_expression(self, p: Any):
+    def primary_expression(self, p: YaccProd):
         return p[0]
 
     @_('"(" expression ")"')
-    def primary_expression(self, p: Any):
+    def primary_expression(self, p: YaccProd):
         return p.expression
 
     @_('OFFSETOF "(" type_name "," offsetof_member_designator ")"')
-    def primary_expression(self, p: Any):
+    def primary_expression(self, p: YaccProd):
         coord = Coord.from_prod(p, self)
         return c_ast.FuncCall(
             c_ast.Id(p.OFFSETOF, coord=coord),
@@ -1746,11 +1738,11 @@ class CParser(Parser):
         )
 
     @_("identifier")
-    def offsetof_member_designator(self, p: Any):
+    def offsetof_member_designator(self, p: YaccProd):
         return p.identifier
 
     @_('offsetof_member_designator "." identifier')
-    def offsetof_member_designator(self, p: Any):
+    def offsetof_member_designator(self, p: YaccProd):
         return c_ast.StructRef(
             p.offsetof_member_designator,
             p[1],
@@ -1759,15 +1751,15 @@ class CParser(Parser):
         )
 
     @_('offsetof_member_designator "[" expression "]"')
-    def offsetof_member_designator(self, p: Any):
+    def offsetof_member_designator(self, p: YaccProd):
         return c_ast.ArrayRef(p.offsetof_member_designator, p.expression, coord=p.offsetof_member_designator.coord)
 
     @_("ID")
-    def identifier(self, p: Any):
+    def identifier(self, p: YaccProd):
         return c_ast.Id(p.ID, coord=Coord.from_prod(p, self))
 
     @_("INT_CONST_DEC", "INT_CONST_OCT", "INT_CONST_HEX", "INT_CONST_BIN", "INT_CONST_CHAR")
-    def constant(self, p: Any):
+    def constant(self, p: YaccProd):
         uCount = 0
         lCount = 0
         for x in p[0][-3:]:
@@ -1786,7 +1778,7 @@ class CParser(Parser):
         return c_ast.Constant(prefix + "int", p[0], coord=Coord.from_prod(p, self))
 
     @_("FLOAT_CONST", "HEX_FLOAT_CONST")
-    def constant(self, p: Any):
+    def constant(self, p: YaccProd):
         if "x" in p[0].lower():
             t = "float"
         else:
@@ -1800,11 +1792,11 @@ class CParser(Parser):
         return c_ast.Constant(t, p[0], coord=Coord.from_prod(p, self))
 
     @_("CHAR_CONST", "WCHAR_CONST", "U8CHAR_CONST", "U16CHAR_CONST", "U32CHAR_CONST")
-    def constant(self, p: Any):
+    def constant(self, p: YaccProd):
         return c_ast.Constant("char", p[0], coord=Coord.from_prod(p, self))
 
     @_("STRING_LITERAL")
-    def unified_string_literal(self, p: Any):
+    def unified_string_literal(self, p: YaccProd):
         """Handle "unified" string literals.
 
         Notes
@@ -1818,7 +1810,7 @@ class CParser(Parser):
         return c_ast.Constant("string", p[0], coord=Coord.from_prod(p, self))
 
     @_("unified_string_literal STRING_LITERAL")
-    def unified_string_literal(self, p: Any):
+    def unified_string_literal(self, p: YaccProd):
         p.unified_string_literal.value = p.unified_string_literal.value[:-1] + p.STRING_LITERAL[1:]
         return p.unified_string_literal
 
@@ -1828,7 +1820,7 @@ class CParser(Parser):
         "U16STRING_LITERAL",
         "U32STRING_LITERAL",
     )
-    def unified_wstring_literal(self, p: Any):
+    def unified_wstring_literal(self, p: YaccProd):
         return c_ast.Constant("string", p[0], coord=Coord.from_prod(p, self))
 
     @_(
@@ -1837,27 +1829,27 @@ class CParser(Parser):
         "unified_wstring_literal U16STRING_LITERAL",
         "unified_wstring_literal U32STRING_LITERAL",
     )
-    def unified_wstring_literal(self, p: Any):
+    def unified_wstring_literal(self, p: YaccProd):
         p.unified_wstring_literal.value = p.unified_wstring_literal.value.rstrip()[:-1] + p[1][2:]
         og_col_end: int = p.unified_wstring_literal.coord.col_end
         p.unified_wstring_literal.coord.col_end = og_col_end + len(p.unified_wstring_literal.value)
         return p.unified_wstring_literal
 
     @_("'{'")
-    def lbrace(self, p: Any):
+    def lbrace(self, p: YaccProd):
         return p[0]
 
     @_("'}'")
-    def rbrace(self, p: Any):
+    def rbrace(self, p: YaccProd):
         return p[0]
 
     # endregion
 
     @override
-    def error(self, token: Any) -> NoReturn:
+    def error(self, token: Optional[Union[Token, YaccSymbol]]) -> NoReturn:
         if token:
             msg = "Syntax error."
-            location = Coord(getattr(token, "lineno", 0), token.index, None, token.end)
+            location = Coord(getattr(token, "lineno", 0), token.index, None, token.end)  # type: ignore
         else:
             msg = "Parse error in input. EOF."
             location = Coord(-1, -1)

@@ -6,8 +6,7 @@ from collections import deque
 from collections.abc import Generator, MutableSequence
 from io import StringIO
 from types import GeneratorType, MemberDescriptorType
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, Optional
-from typing import Union as TUnion
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, Optional, Union as TUnion
 
 from ._cluegen import Datum, all_clues, all_defaults, cluegen
 from ._typing_compat import Self, TypeAlias, TypeGuard, override
@@ -84,11 +83,15 @@ __all__ = (
 if TYPE_CHECKING:
 
     class AST(Datum, kw_only=True):
+        """Base AST node for cparsing."""
+
         _fields: ClassVar[tuple[str, ...]] = ()
         coord: Optional[Coord] = None
 else:
 
     class AST(Datum):
+        """Base AST node for cparsing."""
+
         __slots__ = ("__weakref__", "coord")
 
         _fields: ClassVar[tuple[str, ...]] = ()
@@ -121,6 +124,8 @@ else:
             )
             return f'def __init__(self, {args}{"," if args else ""} *, coord: Optional[int] = None):\n{body}\n'  # noqa: PLE0101
 
+        __repr__ = object.__repr__  # NOTE: Delegate pretty-printing to dump() for the moment.
+
         @override
         def __eq__(self, other: object) -> bool:
             """Return whether two nodes have the same values (disregarding coordinates)."""
@@ -131,40 +136,70 @@ else:
             return compare(self, other)
 
 
-class File(AST):
-    ext: list[AST]
+# region ---- Basic
+class Pragma(AST):
+    string: str
 
 
-class ExprList(AST):
-    exprs: list[AST]
-
-
-class Enumerator(AST):
+class Id(AST):
     name: str
-    value: Optional[AST] = None
 
 
-class EnumeratorList(AST):
-    enumerators: list[Enumerator]
+class Constant(AST):
+    type: str
+    value: str
 
 
-class ParamList(AST):
-    params: list[AST]
+class IdType(AST):
+    names: list[str]
 
 
-class EllipsisParam(AST):
+class EmptyStatement(AST):
     pass
 
 
-class Compound(AST):
-    block_items: Optional[list[AST]]
+class EllipsisParam(AST):
+    # Seemingly only allowed in ParamList.
+    pass
 
 
-# -------- Flow control
-
-# ---- Looping
+# endregion
 
 
+# region ----- Less basic
+class NamedInitializer(AST):
+    name: list[AST]
+    expr: AST
+
+
+class InitList(AST):
+    exprs: list[TUnion[Id, Constant, NamedInitializer, "InitList"]] = []
+
+
+class CompoundLiteral(AST):
+    type: AST
+    init: InitList
+
+
+class StaticAssert(AST):
+    cond: AST
+    message: Optional[AST]
+
+
+class StructRef(AST):
+    name: AST
+    type: str
+    field: AST
+
+
+class ParamList(AST):
+    params: list[TUnion["Typename", "Decl", Id, EllipsisParam]]
+
+
+# endregion
+
+
+# region ---- Flow control
 class For(AST):
     init: Optional[AST]
     cond: Optional[AST]
@@ -180,9 +215,6 @@ class While(AST):
 class DoWhile(AST):
     cond: AST
     stmt: AST
-
-
-# ---- Other flow control
 
 
 class Goto(AST):
@@ -226,9 +258,10 @@ class Return(AST):
     expr: AST
 
 
-# -------- Operations
+# endregion
 
 
+# region ---- Operations
 class Assignment(AST):
     op: str
     left: AST
@@ -252,34 +285,10 @@ class TernaryOp(AST):
     iffalse: AST
 
 
-# -------- Base
+# endregion
 
 
-class Pragma(AST):
-    string: str
-
-
-class Id(AST):
-    name: str
-
-
-class Constant(AST):
-    type: str
-    value: str
-
-
-class EmptyStatement(AST):
-    pass
-
-
-# -------- Other
-
-
-class IdType(AST):
-    names: list[str]
-
-
-# ---- Struct/Union/Enum
+# region ---- Struct/Union/Enum
 class Struct(AST):
     name: Optional[str]
     decls: Optional[list[AST]] = None
@@ -287,23 +296,34 @@ class Struct(AST):
 
 class Union(AST):
     name: Optional[str]
-    decls: Optional[list[AST]]
+    decls: Optional[list[AST]] = None
+
+
+class Enumerator(AST):
+    name: str
+    value: Optional[AST] = None
+
+
+class EnumeratorList(AST):
+    enumerators: list[Enumerator]
 
 
 class Enum(AST):
     name: Optional[str]
-    values: Optional[EnumeratorList]
+    values: Optional[EnumeratorList] = None
 
 
-# ---- Type declaration
+# endregion
+
+
+# region ---- Declaration
 class TypeDecl(AST):
     declname: Optional[str] = None
     quals: Optional[list[str]] = []
-    align: Optional[Any] = None
+    align: Optional[list["Alignas"]] = None
     type: Optional[TUnion[IdType, Struct, Union, Enum]] = None
 
 
-# ---- Type modifiers
 class ArrayDecl(AST):
     type: TUnion[TypeDecl, "PtrDecl", "ArrayDecl"]
     dim: Optional[TUnion[Constant, Id]]
@@ -320,22 +340,43 @@ class PtrDecl(AST):
     type: TUnion[TypeDecl, "PtrDecl", FuncDecl, ArrayDecl]
 
 
-TypeModifier = TUnion[PtrDecl, FuncDecl, ArrayDecl]
+TypeModifier: TypeAlias = TUnion[PtrDecl, FuncDecl, ArrayDecl]
 
 
-# ---- Parent decl
 class Decl(AST):
     name: Optional[str]
     type: TUnion[TypeDecl, TypeModifier, IdType, Struct, Union, Enum]
     quals: list[str] = []
     align: list["Alignas"] = []
     storage: list[str] = []
-    funcspec: list[Any] = []
+    funcspec: list[str] = []
     init: Optional[AST] = None
     bitsize: Optional[AST] = None
 
 
-# ---- Rest
+class DeclList(AST):
+    # Seemingly only present in For.init.
+    decls: list[Decl]
+
+
+# endregion
+
+
+# region ---- Everything else
+class Typedef(AST):
+    name: Optional[str]
+    quals: list[str]
+    storage: list[str]
+    type: AST  # TODO: TUnion[TypeDecl, PtrDecl, ArrayDecl]
+
+
+class Typename(AST):
+    name: Optional[str]
+    quals: list[str]
+    align: Optional[Any]
+    type: TUnion[TypeDecl, TypeModifier]
+
+
 class ArrayRef(AST):
     name: AST
     subscript: AST
@@ -346,17 +387,12 @@ class Alignas(AST):
 
 
 class Cast(AST):
-    to_type: AST
+    to_type: Typename
     expr: AST
 
 
-class CompoundLiteral(AST):
-    type: AST
-    init: AST
-
-
-class DeclList(AST):
-    decls: list[Decl]
+class ExprList(AST):
+    exprs: list[AST]
 
 
 class FuncCall(AST):
@@ -364,45 +400,21 @@ class FuncCall(AST):
     args: ExprList
 
 
+class Compound(AST):
+    block_items: Optional[list[AST]]
+
+
 class FuncDef(AST):
-    decl: AST
-    param_decls: Optional[list[AST]]
-    body: AST
+    decl: Decl
+    param_decls: Optional[list[Decl]]
+    body: Compound
 
 
-class InitList(AST):
-    exprs: list[AST] = []
+class File(AST):
+    ext: list[AST]
 
 
-class NamedInitializer(AST):
-    name: list[AST]
-    expr: AST
-
-
-class StaticAssert(AST):
-    cond: AST
-    message: Optional[AST]
-
-
-class StructRef(AST):
-    name: AST
-    type: Any
-    field: AST
-
-
-class Typedef(AST):
-    name: Optional[str]
-    quals: list[str]
-    storage: list[Any]
-    type: AST
-
-
-class Typename(AST):
-    name: Optional[str]
-    quals: list[str]
-    align: Optional[Any]
-    type: TUnion[TypeDecl, TypeModifier]
-
+# endregion
 
 # endregion
 
@@ -414,7 +426,7 @@ class Typename(AST):
 # ============================================================================
 
 
-def compare(first_node: TUnion[AST, MutableSequence[AST]], second_node: TUnion[AST, MutableSequence[AST]]) -> bool:
+def compare(first_node: TUnion[AST, MutableSequence[AST]], second_node: TUnion[AST, MutableSequence[AST]], /) -> bool:
     """Compare two AST nodes for equality, to see if they have the same field structure with the same values.
 
     This only takes into account fields present in a node's _fields list while ignoring "coord".
@@ -452,7 +464,7 @@ def compare(first_node: TUnion[AST, MutableSequence[AST]], second_node: TUnion[A
     return True
 
 
-def iter_child_nodes(node: AST) -> Generator[AST, Any, None]:
+def iter_child_nodes(node: AST) -> Generator[AST]:
     for field in node._fields:
         potential_subnode = getattr(node, field)
 
@@ -465,7 +477,7 @@ def iter_child_nodes(node: AST) -> Generator[AST, Any, None]:
                     yield subsub
 
 
-def walk(node: AST) -> Generator[AST, Any, None]:
+def walk(node: AST) -> Generator[AST]:
     stack: deque[AST] = deque([node])
     while stack:
         curr_node = stack.popleft()
@@ -476,6 +488,8 @@ def walk(node: AST) -> Generator[AST, Any, None]:
 class NodeVisitor:
     """Visitor pattern for an AST.
 
+    Notes
+    -----
     Implemention is based on a talk by David Beazley called "Generators: The Final Frontier".
     """
 
@@ -575,7 +589,7 @@ class _NodePrettyPrinter(NodeVisitor):
         finally:
             self.write(end)
 
-    def generic_visit_list(self, list_field: list[Any]) -> Generator[AST, Any, None]:
+    def generic_visit_list(self, list_field: list[object]) -> Generator[AST, Any, None]:
         if not list_field:
             self.write("[]")
         else:
@@ -664,9 +678,6 @@ def dump(
 # ========
 
 
-_SimpleNode: TypeAlias = TUnion[Constant, Id, ArrayRef, StructRef, FuncCall]
-
-
 class _Unparser(NodeVisitor):
     # TODO: Consider either writing to an IO buffer here for consistency in implementation with _NodePrettyPrinter.
 
@@ -709,7 +720,7 @@ class _Unparser(NodeVisitor):
             self.indent_level -= val
 
     @staticmethod
-    def is_simple_node(node: AST) -> TypeGuard[_SimpleNode]:
+    def is_simple_node(node: AST) -> TypeGuard[TUnion[Constant, Id, ArrayRef, StructRef, FuncCall]]:
         return isinstance(node, (Constant, Id, ArrayRef, StructRef, FuncCall))
 
     @override

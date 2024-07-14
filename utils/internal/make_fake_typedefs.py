@@ -1,21 +1,16 @@
-import sys
-sys.path.insert(0, '../..')
-
-from pycparser import c_ast, parse_file
+from cparsing import c_ast, parse_file
 
 
 class MyVisitor(c_ast.NodeVisitor):
-    def visit_Typedef(self, node):
-        print('typedef int %s;' % node.name)
+    def visit_Typedef(self, node: c_ast.Typedef) -> None:
+        print(f"typedef int {node.name};")
 
 
-
-def generate_fake_typedefs(filename):
-    ast = parse_file(filename, use_cpp=True, cpp_path="../cpp.exe")
+def generate_fake_typedefs(filename: str) -> None:
+    ast = parse_file(filename, use_cpp=True)
     v = MyVisitor()
     v.visit(ast)
 
 
 if __name__ == "__main__":
-    generate_fake_typedefs('example_c_file_pp.c')
-
+    raise SystemExit(generate_fake_typedefs("example_c_file_pp.c"))

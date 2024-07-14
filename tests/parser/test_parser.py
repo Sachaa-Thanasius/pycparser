@@ -1,19 +1,10 @@
-from pathlib import Path
-from typing import Any, Union
+"""Test fundamentals of the parser."""
+
+from typing import Union
 
 import pytest
-from cparsing import c_ast, parse
-from cparsing.c_context import CParsingError
+from cparsing import CParsingError, c_ast, parse
 from cparsing.utils import Coord
-
-
-# ============================================================================
-# region -------- Tests
-# ============================================================================
-
-# ========
-# region ---- Fundamentals
-# ========
 
 
 @pytest.mark.parametrize(
@@ -49,154 +40,6 @@ def test_empty_toplevel_decl(test_input: str):
 def test_initial_semi(test_input: str, expected: c_ast.AST):
     tree = parse(test_input)
     assert tree == expected
-
-
-# ========
-# region -- Coordinates
-# ========
-#
-# Test the "coordinates" of parsed elements - file name, line and column numbers, with modification inserted by
-# #line directives.
-# TODO: Reexamine Coord system, how they're populated in nodes, the expected results, etc. Compare to pycparser.
-
-
-@pytest.mark.parametrize(("test_input", "expected_coord"), [("int a;", Coord(1, 4, filename="<unknown>"))])
-def test_coords_without_filename(test_input: str, expected_coord: Coord):
-    tree = parse(test_input)
-    assert tree.ext[0].coord == expected_coord
-
-
-def test_coords_with_filename_1():
-    test_input = """\
-int a;
-int b;
-
-
-int c;
-"""
-    filename = "test.c"
-
-    tree = parse(test_input, filename=filename)
-
-    assert tree.ext[0].coord == Coord(1, 4, filename=filename)
-    assert tree.ext[1].coord == Coord(2, 11, filename=filename)
-    assert tree.ext[2].coord == Coord(5, 20, filename=filename)
-
-
-# @pytest.mark.xfail(reason="TODO")
-def test_coords_with_filename_2():
-    test_input = """\
-int main() {
-    k = p;
-    printf("%d", b);
-    return 0;
-}"""
-    filename = "test.c"
-
-    tree = parse(test_input, filename=filename)
-
-    assert tree.ext[0].body.block_items[0].coord == Coord(3, *(13, 0), filename="test.c")  # type: ignore
-    assert tree.ext[0].body.block_items[1].coord == Coord(4, *(13, 0), filename="test.c")  # type: ignore
-
-
-@pytest.mark.xfail(reason="TODO")
-def test_coords_on_Cast():
-    """Issue 23: Make sure that the Cast has a coord."""
-
-    test_input = """\
-    int main () {
-        int p = (int) k;
-    }"""
-    filename = "test.c"
-
-    tree = parse(test_input, filename=filename)
-
-    assert tree.ext[0].body.block_items[0].init.coord == Coord(3, *(21, 0), filename=filename)  # type: ignore
-
-
-@pytest.mark.xfail(reason="TODO")
-@pytest.mark.parametrize(
-    ("test_input", "filename", "expected_coords"),
-    [
-        (
-            "#line 99\nint c;",
-            "<unknown>",
-            [Coord(99, *(13, 0))],
-        ),
-        (
-            'int dsf;\nchar p;\n#line 3000 "in.h"\nchar d;',
-            "test.c",
-            [
-                Coord(2, *(13, 0), filename="test.c"),
-                Coord(3, *(14, 0), filename="test.c"),
-                Coord(3000, *(14, 0), filename="in.h"),
-            ],
-        ),
-        (
-            """\
-#line 20 "restore.h"
-int maydler(char);
-
-#line 30 "includes/daween.ph"
-long j, k;
-
-#line 50000
-char* ro;
-""",
-            "myb.c",
-            [
-                Coord(20, *(13, 0), filename="restore.h"),
-                Coord(30, *(14, 0), filename="includes/daween.ph"),
-                Coord(30, *(17, 0), filename="includes/daween.ph"),
-                Coord(50000, *(13, 0), filename="includes/daween.ph"),
-            ],
-        ),
-        ("int\n#line 99\nc;", "<unknown>", [Coord(99, *(9, 0))]),
-    ],
-)
-def test_coords_with_line_directive(test_input: str, filename: str, expected_coords: list[Coord]):
-    tree = parse(test_input, filename)
-
-    for index, coord in enumerate(expected_coords):
-        assert tree.ext[index].coord == coord
-
-
-@pytest.mark.xfail(reason="TODO")
-def test_coord_for_ellipsis():
-    test_input = """\
-    int foo(int j,
-            ...) {
-    }"""
-    tree = parse(test_input)
-    coord = tree.ext[0].decl.type.args.params[1].coord  # type: ignore
-    assert coord == Coord(3, *(17, 0))
-
-
-@pytest.mark.xfail(reason="TODO")
-def test_coords_forloop() -> None:
-    test_input = """\
-void foo() {
-    for(int z=0; z<4;
-        z++){}
-}
-"""
-
-    tree = parse(test_input, filename="f.c")
-
-    for_loop = tree.ext[0].body.block_items[0]  # type: ignore
-    assert isinstance(for_loop, c_ast.For)
-
-    assert for_loop.init
-    assert for_loop.init.coord == Coord(2, 13, filename="f.c")
-
-    assert for_loop.cond
-    assert for_loop.cond.coord == Coord(2, 26, filename="f.c")
-
-    assert for_loop.next
-    assert for_loop.next.coord == Coord(3, 17, filename="f.c")
-
-
-# endregion
 
 
 @pytest.mark.parametrize(
@@ -1069,12 +912,7 @@ def test_sizeof(test_input: str, expected_compound_block_items: tuple[c_ast.AST,
                 c_ast.TypeDecl("a", type=c_ast.IdType(["int"])),
                 init=c_ast.UnaryOp(
                     op="_Alignof",
-                    expr=c_ast.Typename(
-                        None,
-                        quals=[],
-                        align=None,
-                        type=c_ast.TypeDecl(type=c_ast.IdType(["int"])),
-                    ),
+                    expr=c_ast.Typename(None, quals=[], align=None, type=c_ast.TypeDecl(type=c_ast.IdType(["int"]))),
                 ),
             ),
         ),
@@ -1103,7 +941,7 @@ def test_sizeof(test_input: str, expected_compound_block_items: tuple[c_ast.AST,
             c_ast.Decl(
                 "a",
                 c_ast.TypeDecl("a", type=c_ast.IdType(["char"])),
-                align=[c_ast.Alignas(alignment=c_ast.Constant("int", "4"))],
+                align=[c_ast.Alignas(c_ast.Constant("int", "4"))],
             ),
         ),
         (
@@ -1113,7 +951,7 @@ def test_sizeof(test_input: str, expected_compound_block_items: tuple[c_ast.AST,
                 c_ast.TypeDecl("a", type=c_ast.IdType(["char"])),
                 align=[
                     c_ast.Alignas(
-                        alignment=c_ast.Typename(
+                        c_ast.Typename(
                             None,
                             quals=[],
                             align=None,
@@ -1367,12 +1205,12 @@ void foo() {
 @pytest.mark.parametrize(
     ("test_input", "expected"),
     [
-        ("enum mycolor op;", c_ast.Enum("mycolor", values=None)),
+        ("enum mycolor op;", c_ast.Enum("mycolor")),
         (
             "enum mysize {large=20, small, medium} shoes;",
             c_ast.Enum(
                 "mysize",
-                values=c_ast.EnumeratorList(
+                c_ast.EnumeratorList(
                     [
                         c_ast.Enumerator("large", value=c_ast.Constant("int", "20")),
                         c_ast.Enumerator("small"),
@@ -1385,7 +1223,7 @@ void foo() {
             "enum\n{\n    red,\n    blue,\n    green,\n} color;",
             c_ast.Enum(
                 None,
-                values=c_ast.EnumeratorList(
+                c_ast.EnumeratorList(
                     [
                         c_ast.Enumerator("red"),
                         c_ast.Enumerator("blue"),
@@ -1415,10 +1253,7 @@ def test_enums(test_input: str, expected: c_ast.AST) -> None:
                     "node",
                     quals=[],
                     storage=["typedef"],
-                    type=c_ast.PtrDecl(
-                        quals=[],
-                        type=c_ast.TypeDecl("node", type=c_ast.IdType(["void"])),
-                    ),
+                    type=c_ast.PtrDecl(quals=[], type=c_ast.TypeDecl("node", type=c_ast.IdType(["void"]))),
                 ),
                 c_ast.Decl("k", c_ast.TypeDecl("k", type=c_ast.IdType(["node"]))),
             ],
@@ -1530,7 +1365,7 @@ def test_typedef_error(test_input: str):
         (
             "union pri ra;",
             0,
-            c_ast.Decl("ra", c_ast.TypeDecl("ra", type=c_ast.Union("pri", decls=None))),
+            c_ast.Decl("ra", c_ast.TypeDecl("ra", type=c_ast.Union("pri"))),
         ),
         (
             "struct node* p;",
@@ -1744,7 +1579,7 @@ struct _on_exit_args {
                             None,
                             c_ast.Enum(
                                 "Bar",
-                                values=c_ast.EnumeratorList([c_ast.Enumerator("A", c_ast.Constant("int", "1"))]),
+                                c_ast.EnumeratorList([c_ast.Enumerator("A", c_ast.Constant("int", "1"))]),
                             ),
                         )
                     ],
@@ -1766,7 +1601,7 @@ struct _on_exit_args {
                                     "bar",
                                     type=c_ast.Enum(
                                         "Bar",
-                                        values=c_ast.EnumeratorList(
+                                        c_ast.EnumeratorList(
                                             [
                                                 c_ast.Enumerator("A", c_ast.Constant("int", "1")),
                                                 c_ast.Enumerator("B"),
@@ -1782,7 +1617,7 @@ struct _on_exit_args {
                                     "baz",
                                     type=c_ast.Enum(
                                         "Baz",
-                                        values=c_ast.EnumeratorList([c_ast.Enumerator("D", c_ast.Id("A"))]),
+                                        c_ast.EnumeratorList([c_ast.Enumerator("D", c_ast.Id("A"))]),
                                     ),
                                 ),
                             ),
@@ -1832,7 +1667,6 @@ def test_struct_enum(test_input: str, expected: c_ast.AST):
         ),
     ],
 )
-@pytest.mark.xfail(reason="TODO")
 def test_struct_with_extra_semis_inside(test_input: str, expected: c_ast.AST):
     tree = parse(test_input)
     type_ = tree.ext[0]
@@ -1857,7 +1691,6 @@ def test_struct_with_extra_semis_inside(test_input: str, expected: c_ast.AST):
         )
     ],
 )
-@pytest.mark.xfail(reason="TODO")
 def test_struct_with_initial_semi(test_input: str, expected: c_ast.AST):
     tree = parse(test_input)
     type_ = tree.ext[0]
@@ -2107,7 +1940,6 @@ struct {
         ("union { } foo;", c_ast.Decl("foo", c_ast.TypeDecl("foo", type=c_ast.Union(None, decls=[])))),
     ],
 )
-@pytest.mark.xfail(reason="TODO")
 def test_struct_empty(test_input: str, expected: c_ast.AST):
     """Tests that parsing an empty struct works.
 
@@ -2125,7 +1957,15 @@ def test_struct_empty(test_input: str, expected: c_ast.AST):
     ("test_input", "index", "expected"),
     [
         (
-            "typedef int tagEntry;\n" "\n" "struct tagEntry\n" "{\n" "    char* key;\n" "    char* value;\n" "} Entry;",
+            (
+                "typedef int tagEntry;\n"
+                "\n"
+                "struct tagEntry\n"
+                "{\n"
+                "    char* key;\n"
+                "    char* value;\n"
+                "} Entry;"
+            ),
             1,
             c_ast.Decl(
                 "Entry",
@@ -2185,7 +2025,7 @@ def test_struct_empty(test_input: str, expected: c_ast.AST):
                 None,
                 type=c_ast.Enum(
                     "mytag",
-                    values=c_ast.EnumeratorList([c_ast.Enumerator("ABC", None), c_ast.Enumerator("CDE", None)]),
+                    c_ast.EnumeratorList([c_ast.Enumerator("ABC", None), c_ast.Enumerator("CDE", None)]),
                 ),
             ),
         ),
@@ -2920,833 +2760,3 @@ void main() {
     ]
 
     assert c_ast.compare(tree.ext[0].body.block_items, expected_list)  # type: ignore
-
-
-# endregion
-
-
-# ========
-# region ---- Parsing whole chunks of code
-#
-# Since we don't want to rely on the structure of ASTs too much, most of these tests are implemented with walk().
-# ========
-
-
-def match_constants(code: Union[str, c_ast.AST], constants: list[str]) -> bool:
-    """Check that the list of all Constant values (by 'preorder' appearance) in the chunk of code is as given."""
-
-    tree = parse(code) if isinstance(code, str) else code
-    return [node.value for node in c_ast.walk(tree) if isinstance(node, c_ast.Constant)] == constants
-
-
-def match_number_of_id_refs(code: Union[str, c_ast.AST], name: str, num: int) -> bool:
-    """Check that the number of references to the ID with the given name matches the expected number."""
-
-    tree = parse(code) if isinstance(code, str) else code
-    return sum(1 for node in c_ast.walk(tree) if isinstance(node, c_ast.Id) and node.name == name) == num
-
-
-def match_number_of_node_instances(code: Union[str, c_ast.AST], type: type[c_ast.AST], num: int) -> None:  # noqa: A002
-    """Check that the amount of klass nodes in the code is the expected number."""
-
-    tree = parse(code) if isinstance(code, str) else code
-    assert sum(1 for node in c_ast.walk(tree) if isinstance(node, type)) == num
-
-
-@pytest.mark.parametrize(
-    ("test_input", "expected"),
-    [
-        pytest.param(
-            "int k = (r + 10.0) >> 6 + 8 << (3 & 0x14);",
-            ["10.0", "6", "8", "3", "0x14"],
-            marks=pytest.mark.xfail(reason="TODO"),
-        ),
-        (
-            r"""char n = '\n', *prefix = "st_";""",
-            [r"'\n'", '"st_"'],
-        ),
-        pytest.param(
-            "int main() {\n"
-            "    int i = 5, j = 6, k = 1;\n"
-            "    if ((i=j && k == 1) || k > j)\n"
-            '        printf("Hello, world\n");\n'
-            "    return 0;\n"
-            "}",
-            ["5", "6", "1", "1", '"Hello, world\\n"', "0"],
-            marks=pytest.mark.xfail(reason="TODO"),
-        ),
-    ],
-)
-def test_expressions_constants(test_input: str, expected: list[str]) -> None:
-    tree = parse(test_input)
-    assert match_constants(tree, expected)
-
-
-@pytest.mark.parametrize(
-    ("test_input", "expected"),
-    [
-        (
-            "int main() {\n"
-            "    int i = 5, j = 6, k = 1;\n"
-            "    if ((i=j && k == 1) || k > j)\n"
-            '        printf("Hello, world\n");\n'
-            "    return 0;\n"
-            "}",
-            [("i", 1), ("j", 2)],
-        )
-    ],
-)
-@pytest.mark.xfail(reason="TODO")
-def test_expressions_id_refs(test_input: str, expected: list[tuple[str, int]]):
-    tree = parse(test_input)
-    for id_, num in expected:
-        assert match_number_of_id_refs(tree, id_, num)
-
-
-@pytest.mark.parametrize(
-    ("test_input", "expected_constants", "expected_id_ref_counts", "expected_node_instance_counts"),
-    [
-        (
-            r"""
-void foo(){
-if (sp == 1)
-    if (optind >= argc ||
-        argv[optind][0] != '-' || argv[optind][1] == '\0')
-            return -1;
-    else if (strcmp(argv[optind], "--") == 0) {
-        optind++;
-        return -1;
-    }
-}
-""",
-            ["1", "0", r"'-'", "1", r"'\0'", "1", r'"--"', "0", "1"],
-            [("argv", 3), ("optind", 5)],
-            [(c_ast.If, 3), (c_ast.Return, 2), (c_ast.FuncCall, 1), (c_ast.BinaryOp, 7)],  # FuncCall is strcmp
-        ),
-        pytest.param(
-            r"""
-typedef int Hash, Node;
-
-void HashDestroy(Hash* hash)
-{
-    unsigned int i;
-
-    if (hash == NULL)
-        return;
-
-    for (i = 0; i < hash->table_size; ++i)
-    {
-        Node* temp = hash->heads[i];
-
-        while (temp != NULL)
-        {
-            Node* temp2 = temp;
-
-            free(temp->entry->key);
-            free(temp->entry->value);
-            free(temp->entry);
-
-            temp = temp->next;
-
-            free(temp2);
-        }
-    }
-
-    free(hash->heads);
-    hash->heads = NULL;
-
-    free(hash);
-}
-""",
-            ["0"],
-            [("hash", 6), ("i", 4)],  # declarations don't count
-            [(c_ast.FuncCall, 6), (c_ast.FuncDef, 1), (c_ast.For, 1), (c_ast.While, 1), (c_ast.StructRef, 10)],
-            id="Hash and Node were defined as int to pacify the parser that sees they're used as types",
-        ),
-        (
-            r"""
-void x(void) {
-    int a, b;
-    if (a < b)
-    do {
-        a = 0;
-    } while (0);
-    else if (a == b) {
-    a = 1;
-    }
-}
-""",
-            ["0", "0", "1"],
-            [("a", 4)],
-            [(c_ast.DoWhile, 1)],
-        ),
-    ],
-)
-@pytest.mark.xfail(reason="TODO")
-def test_statements(
-    test_input: str,
-    expected_constants: list[str],
-    expected_id_ref_counts: list[tuple[str, int]],
-    expected_node_instance_counts: list[tuple[type[c_ast.AST], int]],
-):
-    tree = parse(test_input)
-
-    assert match_constants(tree, expected_constants)
-
-    for id_, count in expected_id_ref_counts:
-        assert match_number_of_id_refs(tree, id_, count)
-
-    for node_type, count in expected_node_instance_counts:
-        assert match_number_of_node_instances(tree, node_type, count)
-
-
-@pytest.mark.xfail(reason="TODO")
-def test_empty_statements():
-    test_input = r"""
-void foo(void){
-    ;
-    return;;
-
-    ;
-}
-"""
-
-    tree = parse(test_input)
-
-    assert match_number_of_node_instances(tree, c_ast.EmptyStatement, 3)
-    assert match_number_of_node_instances(tree, c_ast.Return, 1)
-
-    assert tree.ext[0].body.block_items[0].coord.line_start == 3  # type: ignore
-    assert tree.ext[0].body.block_items[1].coord.line_start == 4  # type: ignore
-    assert tree.ext[0].body.block_items[2].coord.line_start == 4  # type: ignore
-    assert tree.ext[0].body.block_items[3].coord.line_start == 6  # type: ignore
-
-
-@pytest.mark.xfail(reason="TODO")
-def test_switch_statement():
-    def is_case_node(node: Any, const_value: str) -> bool:
-        return isinstance(node, c_ast.Case) and isinstance(node.expr, c_ast.Constant) and node.expr.value == const_value
-
-    test_input_1 = r"""
-int foo(void) {
-    switch (myvar) {
-        case 10:
-            k = 10;
-            p = k + 1;
-            return 10;
-        case 20:
-        case 30:
-            return 20;
-        default:
-            break;
-    }
-    return 0;
-}
-"""
-
-    tree1 = parse(test_input_1)
-    switch = tree1.ext[0].body.block_items[0]  # type: ignore
-
-    block = switch.stmt.block_items  # type: ignore
-    assert len(block) == 4  # type: ignore
-
-    assert is_case_node(block[0], "10")
-    assert len(block[0].stmts) == 3  # type: ignore
-
-    assert is_case_node(block[1], "20")
-    assert len(block[1].stmts) == 0  # type: ignore
-
-    assert is_case_node(block[2], "30")
-    assert len(block[2].stmts) == 1  # type: ignore
-
-    assert isinstance(block[3], c_ast.Default)
-
-    test_input_2 = r"""
-int foo(void) {
-    switch (myvar) {
-        default:
-            joe = moe;
-            return 10;
-        case 10:
-        case 20:
-        case 30:
-        case 40:
-            break;
-    }
-    return 0;
-}
-"""
-
-    tree2 = parse(test_input_2)
-    switch = tree2.ext[0].body.block_items[0]  # type: ignore
-
-    block = switch.stmt.block_items  # type: ignore
-    assert len(block) == 5  # type: ignore
-
-    assert isinstance(block[0], c_ast.Default)
-    assert len(block[0].stmts) == 2  # type: ignore
-
-    assert is_case_node(block[1], "10")
-    assert len(block[1].stmts) == 0  # type: ignore
-
-    assert is_case_node(block[2], "20")
-    assert len(block[2].stmts) == 0  # type: ignore
-
-    assert is_case_node(block[3], "30")
-    assert len(block[3].stmts) == 0  # type: ignore
-
-    assert is_case_node(block[4], "40")
-    assert len(block[4].stmts) == 1  # type: ignore
-
-    test_input_3 = r"""
-int foo(void) {
-    switch (myvar) {
-    }
-    return 0;
-}
-"""
-
-    tree3 = parse(test_input_3)
-    switch = tree3.ext[0].body.block_items[0]  # type: ignore
-
-    assert switch.stmt.block_items == []  # type: ignore
-
-
-@pytest.mark.parametrize(
-    ("test_input", "expected_i_ref_count", "expected_For_instance_count"),
-    [
-        pytest.param(
-            r"""
-void x(void)
-{
-    int i;
-    for (i = 0; i < 5; ++i) {
-        x = 50;
-    }
-}
-""",
-            3,
-            1,
-            id="3 refs for i since the declaration doesn't count in the visitor.",
-        ),
-        pytest.param(
-            r"""
-void x(void)
-{
-    for (int i = 0; i < 5; ++i) {
-        x = 50;
-    }
-}
-""",
-            2,
-            1,
-            id="2 refs for i since the declaration doesn't count in the visitor.",
-        ),
-        (
-            r"""
-void x(void) {
-    for (int i = 0;;)
-        i;
-}
-""",
-            1,
-            1,
-        ),
-    ],
-)
-@pytest.mark.xfail(reason="TODO")
-def test_for_statement(test_input: str, expected_i_ref_count: int, expected_For_instance_count: int):
-    tree = parse(test_input)
-    assert match_number_of_id_refs(tree, "i", expected_i_ref_count)
-    assert match_number_of_node_instances(tree, c_ast.For, expected_For_instance_count)
-
-
-@pytest.mark.xfail(reason="TODO")
-def test_whole_file():
-    """See how pycparser handles a whole, real C file."""
-
-    SAMPLE_CFILES_PATH = Path().resolve(strict=True) / "tests" / "c_files"
-
-    code = SAMPLE_CFILES_PATH.joinpath("memmgr_with_h.c").read_text(encoding="utf-8")
-    test_input = parse(code)
-
-    assert match_number_of_node_instances(test_input, c_ast.FuncDef, 5)
-
-    # each FuncDef also has a FuncDecl. 4 declarations + 5 definitions, overall 9
-    assert match_number_of_node_instances(test_input, c_ast.FuncDecl, 9)
-
-    assert match_number_of_node_instances(test_input, c_ast.Typedef, 4)
-
-    assert test_input.ext[4].coord
-    assert test_input.ext[4].coord.line_start == 88
-    assert test_input.ext[4].coord.filename == "./memmgr.h"
-
-    assert test_input.ext[6].coord
-    assert test_input.ext[6].coord.line_start == 10
-    assert test_input.ext[6].coord.filename == "memmgr.c"
-
-
-@pytest.mark.xfail(reason="TODO")
-def test_whole_file_with_stdio():
-    """Parse a whole file with stdio.h included by cpp."""
-
-    SAMPLE_CFILES_PATH = Path().resolve(strict=True) / "tests" / "c_files"
-
-    code = SAMPLE_CFILES_PATH.joinpath("cppd_with_stdio_h.c").read_text(encoding="utf-8")
-    test_input = parse(code)
-
-    assert isinstance(test_input.ext[0], c_ast.Typedef)
-    assert test_input.ext[0].coord
-    assert test_input.ext[0].coord.line_start == 213
-    assert test_input.ext[0].coord.filename == r"D:\eli\cpp_stuff\libc_include/stddef.h"
-
-    assert isinstance(test_input.ext[-1], c_ast.FuncDef)
-    assert test_input.ext[-1].coord
-    assert test_input.ext[-1].coord.line_start == 15
-    assert test_input.ext[-1].coord.filename == "example_c_file.c"
-
-    assert isinstance(test_input.ext[-8], c_ast.Typedef)
-    assert isinstance(test_input.ext[-8].type, c_ast.TypeDecl)
-    assert test_input.ext[-8].name == "cookie_io_functions_t"
-
-
-# endregion
-
-
-# ========
-# region ---- Issues related to typedef-name problem
-# ========
-
-
-@pytest.mark.xfail(reason="TODO")
-def test_innerscope_typedef():
-    # should succeed since TT is not a type in bar
-    test_input = r"""
-void foo() {
-    typedef char TT;
-    TT x;
-}
-void bar() {
-    unsigned TT;
-}
-"""
-    assert isinstance(parse(test_input), c_ast.File)
-
-
-def test_innerscope_typedef_error():
-    # should fail since TT is not a type in bar
-    test_input = r"""
-void foo() {
-    typedef char TT;
-    TT x;
-}
-void bar() {
-    TT y;
-}
-"""
-
-    with pytest.raises(CParsingError):
-        parse(test_input)
-
-
-@pytest.mark.parametrize(
-    ("test_input", "expected_inner_param_1", "expected_inner_param_2"),
-    [
-        pytest.param(
-            "typedef char TT;\nint foo(int (aa));\nint bar(int (TT));",
-            c_ast.Decl("aa", c_ast.TypeDecl("aa", type=c_ast.IdType(["int"]))),
-            c_ast.Typename(
-                None,
-                quals=[],
-                align=None,
-                type=c_ast.FuncDecl(
-                    args=c_ast.ParamList(
-                        [
-                            c_ast.Typename(
-                                None,
-                                quals=[],
-                                align=None,
-                                type=c_ast.TypeDecl(type=c_ast.IdType(["TT"])),
-                            )
-                        ]
-                    ),
-                    type=c_ast.TypeDecl(type=c_ast.IdType(["int"])),
-                ),
-            ),
-            id="foo takes an int named aa; bar takes a function taking a TT",
-        ),
-        pytest.param(
-            "typedef char TT;\nint foo(int (aa (char)));\nint bar(int (TT (char)));",
-            c_ast.Decl(
-                "aa",
-                c_ast.FuncDecl(
-                    args=c_ast.ParamList(
-                        [
-                            c_ast.Typename(
-                                None,
-                                quals=[],
-                                align=None,
-                                type=c_ast.TypeDecl(type=c_ast.IdType(["char"])),
-                            )
-                        ]
-                    ),
-                    type=c_ast.TypeDecl("aa", type=c_ast.IdType(["int"])),
-                ),
-            ),
-            c_ast.Typename(
-                None,
-                quals=[],
-                align=None,
-                type=c_ast.FuncDecl(
-                    args=c_ast.ParamList(
-                        [
-                            c_ast.Typename(
-                                None,
-                                quals=[],
-                                align=None,
-                                type=c_ast.FuncDecl(
-                                    args=c_ast.ParamList(
-                                        [
-                                            c_ast.Typename(
-                                                None,
-                                                quals=[],
-                                                align=None,
-                                                type=c_ast.TypeDecl(type=c_ast.IdType(["char"])),
-                                            )
-                                        ]
-                                    ),
-                                    type=c_ast.TypeDecl(type=c_ast.IdType(["TT"])),
-                                ),
-                            )
-                        ]
-                    ),
-                    type=c_ast.TypeDecl(type=c_ast.IdType(["int"])),
-                ),
-            ),
-            id="foo takes a function taking a char; bar takes a function taking a function taking a char",
-        ),
-        pytest.param(
-            "typedef char TT;\nint foo(int (aa[]));\nint bar(int (TT[]));",
-            c_ast.Decl(
-                "aa",
-                c_ast.ArrayDecl(type=c_ast.TypeDecl("aa", type=c_ast.IdType(["int"])), dim=None, dim_quals=[]),
-            ),
-            c_ast.Typename(
-                None,
-                quals=[],
-                align=None,
-                type=c_ast.FuncDecl(
-                    args=c_ast.ParamList(
-                        [
-                            c_ast.Typename(
-                                None,
-                                quals=[],
-                                align=None,
-                                type=c_ast.ArrayDecl(
-                                    type=c_ast.TypeDecl(type=c_ast.IdType(["TT"])), dim=None, dim_quals=[]
-                                ),
-                            )
-                        ]
-                    ),
-                    type=c_ast.TypeDecl(type=c_ast.IdType(["int"])),
-                ),
-            ),
-            id="foo takes an int array named aa; bar takes a function taking a TT array",
-        ),
-    ],
-)
-def test_ambiguous_parameters(test_input: str, expected_inner_param_1: c_ast.AST, expected_inner_param_2: c_ast.AST):
-    # From ISO/IEC 9899:TC2, 6.7.5.3.11:
-    # "If, in a parameter declaration, an identifier can be treated either
-    #  as a typedef name or as a parameter name, it shall be taken as a
-    #  typedef name."
-
-    tree = parse(test_input)
-    assert tree.ext[1].type.args.params[0] == expected_inner_param_1  # type: ignore
-    assert tree.ext[2].type.args.params[0] == expected_inner_param_2  # type: ignore
-
-
-@pytest.mark.xfail(reason="TODO")
-def test_innerscope_reuse_typedef_name():
-    # identifiers can be reused in inner scopes; the original should be restored at the end of the block
-
-    test_input_1 = r"""
-typedef char TT;
-void foo(void) {
-    unsigned TT;
-    TT = 10;
-}
-TT x = 5;
-"""
-    tree1 = parse(test_input_1)
-
-    expected_before_end = c_ast.Decl("TT", c_ast.TypeDecl("TT", type=c_ast.IdType(["unsigned"])))
-    expected_after_end = c_ast.Decl(
-        "x", c_ast.TypeDecl("x", type=c_ast.IdType(["TT"])), init=c_ast.Constant("int", "5")
-    )
-    assert tree1.ext[1].body.block_items[0] == expected_before_end  # type: ignore
-    assert tree1.ext[2] == expected_after_end
-
-    # this should be recognized even with an initializer
-    test_input_2 = r"""
-typedef char TT;
-void foo(void) {
-    unsigned TT = 10;
-}
-"""
-    tree2 = parse(test_input_2)
-
-    expected = c_ast.Decl("TT", c_ast.TypeDecl("TT", type=c_ast.IdType(["unsigned"])), init=c_ast.Constant("int", "10"))
-    assert tree2.ext[1].body.block_items[0] == expected  # type: ignore
-
-    # before the second local variable, TT is a type; after, it's a
-    # variable
-    test_input_3 = r"""
-typedef char TT;
-void foo(void) {
-    TT tt = sizeof(TT);
-    unsigned TT = 10;
-}
-"""
-    tree3 = parse(test_input_3)
-
-    expected_before_end = c_ast.Decl(
-        "tt",
-        c_ast.TypeDecl("tt", type=c_ast.IdType(["TT"])),
-        init=c_ast.UnaryOp(
-            op="sizeof",
-            expr=c_ast.Typename(None, quals=[], align=None, type=c_ast.TypeDecl(type=c_ast.IdType(["TT"]))),
-        ),
-    )
-    expected_after_end = c_ast.Decl(
-        "TT",
-        c_ast.TypeDecl("TT", type=c_ast.IdType(names=["unsigned"])),
-        init=c_ast.Constant("int", "10"),
-    )
-    assert tree3.ext[1].body.block_items[0] == expected_before_end  # type: ignore
-    assert tree3.ext[1].body.block_items[1] == expected_after_end  # type: ignore
-
-    # a variable and its type can even share the same name
-    test_input_4 = r"""
-typedef char TT;
-void foo(void) {
-    TT TT = sizeof(TT);
-    unsigned uu = TT * 2;
-}
-"""
-    tree4 = parse(test_input_4)
-
-    expected_before_end = c_ast.Decl(
-        "TT",
-        c_ast.TypeDecl("TT", type=c_ast.IdType(["TT"])),
-        init=c_ast.UnaryOp(
-            op="sizeof",
-            expr=c_ast.Typename(None, quals=[], align=None, type=c_ast.TypeDecl(type=c_ast.IdType(["TT"]))),
-        ),
-    )
-
-    expected_after_end = c_ast.Decl(
-        "uu",
-        c_ast.TypeDecl("uu", type=c_ast.IdType(["unsigned"])),
-        init=c_ast.BinaryOp(op="*", left=c_ast.Id("TT"), right=c_ast.Constant("int", "2")),
-    )
-
-    assert tree4.ext[1].body.block_items[0] == expected_before_end  # type: ignore
-    assert tree4.ext[1].body.block_items[1] == expected_after_end  # type: ignore
-
-    # ensure an error is raised if a type, redeclared as a variable, is
-    # used as a type
-    test_input_5 = r"""
-typedef char TT;
-void foo(void) {
-    unsigned TT = 10;
-    TT erroneous = 20;
-}
-"""
-    with pytest.raises(CParsingError):
-        parse(test_input_5)
-
-    # reusing a type name should work with multiple declarators
-    test_input_6 = r"""
-typedef char TT;
-void foo(void) {
-    unsigned TT, uu;
-}
-"""
-    tree6 = parse(test_input_6)
-
-    expected_before_end = c_ast.Decl("TT", c_ast.TypeDecl("TT", type=c_ast.IdType(["unsigned"])))
-    expected_after_end = c_ast.Decl("uu", c_ast.TypeDecl("uu", type=c_ast.IdType(["unsigned"])))
-
-    assert tree6.ext[1].body.block_items[0] == expected_before_end  # type: ignore
-    assert tree6.ext[1].body.block_items[1] == expected_after_end  # type: ignore
-
-    # reusing a type name should work after a pointer
-    test_input_7 = r"""
-typedef char TT;
-void foo(void) {
-    unsigned * TT;
-}
-"""
-    tree7 = parse(test_input_7)
-
-    expected = c_ast.Decl("TT", c_ast.PtrDecl(quals=[], type=c_ast.TypeDecl("TT", type=c_ast.IdType(["unsigned"]))))
-    assert tree7.ext[1].body.block_items[0] == expected  # type: ignore
-
-    # redefine a name in the middle of a multi-declarator declaration
-    test_input_8 = r"""
-typedef char TT;
-void foo(void) {
-    int tt = sizeof(TT), TT, uu = sizeof(TT);
-    int uu = sizeof(tt);
-}
-"""
-    tree8 = parse(test_input_8)
-
-    expected_first = c_ast.Decl(
-        "tt",
-        c_ast.TypeDecl("tt", type=c_ast.IdType(["int"])),
-        init=c_ast.UnaryOp(
-            op="sizeof",
-            expr=c_ast.Typename(None, quals=[], align=None, type=c_ast.TypeDecl(type=c_ast.IdType(["TT"]))),
-        ),
-    )
-    expected_second = c_ast.Decl("TT", c_ast.TypeDecl("TT", type=c_ast.IdType(["int"])))
-    expected_third = c_ast.Decl(
-        "uu",
-        c_ast.TypeDecl("uu", type=c_ast.IdType(["int"])),
-        init=c_ast.UnaryOp(
-            op="sizeof",
-            expr=c_ast.Typename(None, quals=[], align=None, type=c_ast.TypeDecl(type=c_ast.IdType(["TT"]))),
-        ),
-    )
-
-    assert tree8.ext[1].body.block_items[0] == expected_first  # type: ignore
-    assert tree8.ext[1].body.block_items[1] == expected_second  # type: ignore
-    assert tree8.ext[1].body.block_items[2] == expected_third  # type: ignore
-
-    # Don't test this until we have support for it
-    # self.assertEqual(expand_init(items[0].init),
-    #     ['UnaryOp', 'sizeof', ['Typename', ['TypeDecl', ['IdentifierType', ['TT']]]]])
-    # self.assertEqual(expand_init(items[2].init),
-    #     ['UnaryOp', 'sizeof', ['ID', 'TT']])
-
-
-@pytest.mark.parametrize(
-    ("test_input", "expected"),
-    [
-        # identifiers can be reused as parameter names; parameter name scope
-        # begins and ends with the function body; it's important that TT is
-        # used immediately before the LBRACE or after the RBRACE, to test
-        # a corner case
-        pytest.param(
-            r"""
-typedef char TT;
-void foo(unsigned TT, TT bar) {
-    TT = 10;
-}
-TT x = 5;
-""",
-            c_ast.FuncDef(
-                decl=c_ast.Decl(
-                    "foo",
-                    c_ast.FuncDecl(
-                        args=c_ast.ParamList(
-                            [
-                                c_ast.Decl("TT", c_ast.TypeDecl("TT", type=c_ast.IdType(["unsigned"]))),
-                                c_ast.Decl("bar", c_ast.TypeDecl("bar", type=c_ast.IdType(["TT"]))),
-                            ]
-                        ),
-                        type=c_ast.TypeDecl("foo", type=c_ast.IdType(["void"])),
-                    ),
-                ),
-                param_decls=None,
-                body=c_ast.Compound([c_ast.Assignment(op="=", left=c_ast.Id("TT"), right=c_ast.Constant("int", "10"))]),
-            ),
-            marks=pytest.mark.xfail(reason="TODO"),
-        ),
-        # the scope of a parameter name in a function declaration ends at the
-        # end of the declaration...so it is effectively never used; it's
-        # important that TT is used immediately after the declaration, to
-        # test a corner case
-        (
-            r"""
-typedef char TT;
-void foo(unsigned TT, TT bar);
-TT x = 5;
-""",
-            c_ast.Decl(
-                "foo",
-                c_ast.FuncDecl(
-                    args=c_ast.ParamList(
-                        [
-                            c_ast.Decl("TT", c_ast.TypeDecl("TT", type=c_ast.IdType(["unsigned"]))),
-                            c_ast.Decl("bar", c_ast.TypeDecl("bar", type=c_ast.IdType(["TT"]))),
-                        ]
-                    ),
-                    type=c_ast.TypeDecl("foo", type=c_ast.IdType(["void"])),
-                ),
-            ),
-        ),
-    ],
-)
-def test_parameter_reuse_typedef_name(test_input: str, expected: c_ast.AST):
-    tree = parse(test_input)
-    assert tree.ext[1] == expected
-
-
-@pytest.mark.parametrize(
-    "test_input",
-    [
-        pytest.param(
-            r"""
-typedef char TT;
-void foo(unsigned TT, TT bar) {
-    TT erroneous = 20;
-}
-""",
-            id="Ensure error is raised if a type, redeclared as a parameter, is used as a type",
-        )
-    ],
-)
-def test_parameter_reuse_typedef_name_error(test_input: str):
-    with pytest.raises(CParsingError):
-        parse(test_input)
-
-
-@pytest.mark.xfail(reason="TODO")
-def test_nested_function_decls():
-    # parameter names of nested function declarations must not escape into the top-level function _definition's_ scope;
-    # the following must succeed because TT is still a typedef inside foo's body
-    test_input = r"""
-typedef char TT;
-void foo(unsigned bar(int TT)) {
-    TT x = 10;
-}
-"""
-    assert isinstance(parse(test_input), c_ast.File)
-
-
-@pytest.mark.parametrize(
-    "test_input",
-    [
-        r"""
-typedef char TT;
-char TT = 5;
-""",
-        r"""
-char TT = 5;
-typedef char TT;
-""",
-    ],
-)
-def test_samescope_reuse_name(test_input: str):
-    """A typedef name cannot be reused as an object name in the same scope, or vice versa."""
-
-    with pytest.raises(CParsingError):
-        parse(test_input)
-
-
-# endregion
-
-# endregion

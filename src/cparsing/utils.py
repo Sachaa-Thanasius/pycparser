@@ -1,6 +1,8 @@
-"""Some utilities for internal use."""
+"""Module with utilities for internal use, e.g. the Coord class."""
 
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Optional
+
+from sly.yacc import YaccProduction
 
 from ._cluegen import Datum
 from ._typing_compat import Self, override
@@ -20,7 +22,7 @@ class Coord(Datum):
     filename: str = "<unknown>"
 
     @classmethod
-    def from_prod(cls, p: Any, parser: "CParser") -> Self:
+    def from_prod(cls, p: YaccProduction, parser: "CParser") -> Self:
         return cls(p.lineno, p.index, filename=parser.ctx.filename)
 
     @classmethod

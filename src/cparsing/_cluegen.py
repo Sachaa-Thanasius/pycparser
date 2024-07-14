@@ -24,12 +24,13 @@ import sys
 from collections.abc import Callable
 from functools import reduce
 from types import MemberDescriptorType
-from typing import Any, ClassVar, Final, Protocol, TypeVar, final, get_origin
+from typing import ClassVar, Final, Protocol, TypeVar, final, get_origin
 
 from ._typing_compat import Self, dataclass_transform, override
 
 
 _DBT_contra = TypeVar("_DBT_contra", bound="DatumBase", contravariant=True)
+
 
 class _ClueGenDescriptor(Protocol[_DBT_contra]):
     def __get__(self, instance: _DBT_contra, owner: type[_DBT_contra]) -> object: ...
@@ -45,7 +46,7 @@ class _Nothing:
         return "CLUEGEN_NOTHING"
 
 
-CLUEGEN_NOTHING: Final[Any] = _Nothing()
+CLUEGEN_NOTHING: Final = _Nothing()
 """Sentinel that can act as a placeholder for a mutable default value in a signature."""
 
 _MISSING = object()

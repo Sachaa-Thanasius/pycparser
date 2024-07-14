@@ -68,6 +68,7 @@ line-length = 120
 target-version = "py39"
 
 [tool.ruff.lint]
+typing-modules = ["src/cparsing/_typing_compat.py"]
 select = [
     "F",
     "E",
@@ -136,15 +137,15 @@ unfixable = [
     "ERA", # Prevent unlikely erroneous deletion.
 ]
 
-typing-modules = ["src/cparsing/_typing_compat.py"]
-
 [tool.ruff.lint.pyupgrade]
 keep-runtime-typing = true
 
 [tool.ruff.lint.isort]
 lines-after-imports = 2
+combine-as-imports = true
 
 [tool.ruff.lint.per-file-ignores]
+# -- Package code
 "**/__init__.py" = [
     # Ruff doesn't understand using star imports to export names in a package.
     "F403",
@@ -164,6 +165,12 @@ lines-after-imports = 2
     "F821",
     "ANN201",
 ]
+
+# -- Everything else
+"utils/*.py" = [
+    "T201",   # Allow printing.
+    "INP001", # Allow namespace packages.
+]
 "tests/*.py" = [
     # See reasoning above.
     "RUF012",
@@ -180,7 +187,7 @@ lines-after-imports = 2
     "T201",
     "ANN201",
     "ANN001", # Ignore missing parameter annotations as well.
-    "INP001", # Implicit namespace packages.
+    "INP001", # Allow namespace packages.
 ]
 
 
@@ -188,7 +195,7 @@ lines-after-imports = 2
 
 [tool.pyright]
 include = ["src/cparsing"]
-ignore = ["tests"]
+# ignore = ["tests"]
 pythonVersion = "3.9"
 pythonPlatform = "All"
 typeCheckingMode = "strict"

@@ -516,7 +516,6 @@ int main(void)
         ),
         pytest.param(
             "\nstruct foo {};",
-            marks=pytest.mark.xfail(reason="TODO"),
             id="issue 66, 2; An empty body must be generated (added behavior)",
         ),
         pytest.param(

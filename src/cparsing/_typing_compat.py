@@ -2,7 +2,7 @@
 
 import sys
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 
 if sys.version_info >= (3, 9, 2):  # noqa: UP036 # Subclassing functionality not added until then.
@@ -21,7 +21,7 @@ elif TYPE_CHECKING:
 else:  # pragma: <3.12 cover
     from typing import TypeVar, Union
 
-    _T = TypeVar("_T", bound=Callable[..., Any])
+    _T = TypeVar("_T", bound=Callable[..., object])
 
     def dataclass_transform(
         *,
@@ -29,8 +29,8 @@ else:  # pragma: <3.12 cover
         order_default: bool = False,
         kw_only_default: bool = False,
         frozen_default: bool = False,
-        field_specifiers: tuple[Union[type[Any], Callable[..., Any]], ...] = (),
-        **kwargs: Any,
+        field_specifiers: tuple[Union[type, Callable[..., object]], ...] = (),
+        **kwargs: object,
     ) -> Callable[[_T], _T]:
         def decorator(cls_or_fn: _T) -> _T:
             cls_or_fn.__dataclass_transform__ = {

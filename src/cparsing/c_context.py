@@ -11,7 +11,7 @@ from .c_parser import CParser
 from .utils import Coord
 
 
-__all__ = ("CContext", "parse", "preprocess_file", "parse_file")
+__all__ = ("CContext", "CParsingError", "parse", "preprocess_file", "parse_file")
 
 
 class CParsingError(Exception):
