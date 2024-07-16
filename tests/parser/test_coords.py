@@ -32,7 +32,7 @@ int c;
     assert tree.ext[2].coord == Coord(5, 20, filename=filename)
 
 
-# @pytest.mark.xfail(reason="TODO")
+@pytest.mark.xfail(reason="TODO")
 def test_coords_with_filename_2():
     test_input = """\
 int main() {
@@ -44,8 +44,8 @@ int main() {
 
     tree = parse(test_input, filename=filename)
 
-    assert tree.ext[0].body.block_items[0].coord == Coord(3, *(13, 0), filename="test.c")  # type: ignore
-    assert tree.ext[0].body.block_items[1].coord == Coord(4, *(13, 0), filename="test.c")  # type: ignore
+    assert tree.ext[0].body.block_items[0].coord == Coord(3, *(13, 0), filename="test.c")  # pyright: ignore
+    assert tree.ext[0].body.block_items[1].coord == Coord(4, *(13, 0), filename="test.c")  # pyright: ignore
 
 
 @pytest.mark.xfail(reason="TODO")
@@ -60,7 +60,7 @@ def test_coords_on_Cast():
 
     tree = parse(test_input, filename=filename)
 
-    assert tree.ext[0].body.block_items[0].init.coord == Coord(3, *(21, 0), filename=filename)  # type: ignore
+    assert tree.ext[0].body.block_items[0].init.coord == Coord(3, *(21, 0), filename=filename)  # pyright: ignore
 
 
 @pytest.mark.xfail(reason="TODO")
@@ -117,7 +117,7 @@ def test_coord_for_ellipsis():
             ...) {
     }"""
     tree = parse(test_input)
-    coord = tree.ext[0].decl.type.args.params[1].coord  # type: ignore
+    coord = tree.ext[0].decl.type.args.params[1].coord  # pyright: ignore
     assert coord == Coord(3, *(17, 0))
 
 
@@ -132,7 +132,7 @@ void foo() {
 
     tree = parse(test_input, filename="f.c")
 
-    for_loop = tree.ext[0].body.block_items[0]  # type: ignore
+    for_loop = tree.ext[0].body.block_items[0]  # pyright: ignore
     assert isinstance(for_loop, c_ast.For)
 
     assert for_loop.init

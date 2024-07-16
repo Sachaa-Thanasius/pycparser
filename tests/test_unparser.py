@@ -570,17 +570,17 @@ def test_partial_funcdecl_generation(test_input: str, expected_stubs: tuple[str,
 def test_array_decl_subnodes():
     tree = parse("const int a[const 20];")
 
-    assert c_ast.unparse(tree.ext[0].type) == "const int [const 20]"  # type: ignore
-    assert c_ast.unparse(tree.ext[0].type.type) == "const int"  # type: ignore
+    assert c_ast.unparse(tree.ext[0].type) == "const int [const 20]"  # pyright: ignore
+    assert c_ast.unparse(tree.ext[0].type.type) == "const int"  # pyright: ignore
 
 
 @pytest.mark.xfail(reason="TODO")
 def test_ptr_decl_subnodes():
     tree = parse("const int ** const  x;")
 
-    assert c_ast.unparse(tree.ext[0].type) == "const int ** const"  # type: ignore
-    assert c_ast.unparse(tree.ext[0].type.type) == "const int *"  # type: ignore
-    assert c_ast.unparse(tree.ext[0].type.type.type) == "const int"  # type: ignore
+    assert c_ast.unparse(tree.ext[0].type) == "const int ** const"  # pyright: ignore
+    assert c_ast.unparse(tree.ext[0].type.type) == "const int *"  # pyright: ignore
+    assert c_ast.unparse(tree.ext[0].type.type.type) == "const int"  # pyright: ignore
 
 
 @pytest.mark.parametrize(
@@ -669,8 +669,8 @@ def test_to_type():
     test_func = c_ast.FuncCall(c_ast.Id("test_fun"), c_ast.ExprList([]))
 
     tree = parse(test_input)
-    assert c_ast.unparse(c_ast.Cast(tree.ext[0].type, test_func)) == "(int *) test_fun()"  # type: ignore
-    assert c_ast.unparse(c_ast.Cast(tree.ext[0].type.type, test_func)) == "(int) test_fun()"  # type: ignore
+    assert c_ast.unparse(c_ast.Cast(tree.ext[0].type, test_func)) == "(int *) test_fun()"  # pyright: ignore
+    assert c_ast.unparse(c_ast.Cast(tree.ext[0].type.type, test_func)) == "(int) test_fun()"  # pyright: ignore
 
 
 @pytest.mark.skipif(platform.system() != "Linux", reason="cpp only works on Unix")
@@ -681,8 +681,8 @@ def test_to_type_with_cpp():
     memmgr_path = SAMPLE_CFILES_PATH / "memmgr.h"
 
     tree = parse_file(memmgr_path, use_cpp=True, cpp_path=cpp_path(), cpp_args=cpp_args())
-    assert c_ast.unparse(c_ast.Cast(tree.ext[-3].type.type, test_func)) == "(void *) test_fun()"  # type: ignore
-    assert c_ast.unparse(c_ast.Cast(tree.ext[-3].type.type.type, test_func)) == "(void) test_fun()"  # type: ignore
+    assert c_ast.unparse(c_ast.Cast(tree.ext[-3].type.type, test_func)) == "(void *) test_fun()"  # pyright: ignore
+    assert c_ast.unparse(c_ast.Cast(tree.ext[-3].type.type.type, test_func)) == "(void) test_fun()"  # pyright: ignore
 
 
 @pytest.mark.parametrize(

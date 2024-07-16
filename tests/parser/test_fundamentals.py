@@ -889,12 +889,12 @@ void foo()
 @pytest.mark.xfail(reason="TODO")
 def test_sizeof(test_input: str, expected_compound_block_items: tuple[c_ast.AST, ...]) -> None:
     tree = parse(test_input)
-    compound = tree.ext[0].body  # type: ignore
+    compound = tree.ext[0].body  # pyright: ignore
     assert isinstance(compound, c_ast.Compound)
     assert compound.block_items
 
     for index, expected in enumerate(expected_compound_block_items):
-        found_init = compound.block_items[index].init  # type: ignore
+        found_init = compound.block_items[index].init  # pyright: ignore
         assert isinstance(found_init, c_ast.UnaryOp)
         assert found_init == expected
 
@@ -1074,7 +1074,7 @@ void foo() {
     ]
 
     tree = parse(test_input)
-    assert c_ast.compare(tree.ext[0].body.block_items, expected_list)  # type: ignore
+    assert c_ast.compare(tree.ext[0].body.block_items, expected_list)  # pyright: ignore
 
 
 @pytest.mark.xfail(reason="TODO")
@@ -1086,7 +1086,7 @@ void foo() {
 
     tree = parse(test_input)
 
-    compound = tree.ext[0].body  # type: ignore
+    compound = tree.ext[0].body  # pyright: ignore
     assert isinstance(compound, c_ast.Compound)
     assert compound.coord == Coord(2, 0, filename="<unknown>")
 
@@ -1140,7 +1140,7 @@ void foo() {
 
     tree = parse(test_input)
 
-    compound = tree.ext[0].body.block_items[index].right  # type: ignore
+    compound = tree.ext[0].body.block_items[index].right  # pyright: ignore
     assert isinstance(compound, c_ast.CompoundLiteral)
     assert compound == expected
 
@@ -1196,7 +1196,7 @@ void foo() {
     ]
 
     tree = parse(test_input)
-    assert c_ast.compare(tree.ext[0].body.block_items, expected)  # type: ignore
+    assert c_ast.compare(tree.ext[0].body.block_items, expected)  # pyright: ignore
 
 
 @pytest.mark.parametrize(
@@ -1234,7 +1234,7 @@ void foo() {
 )
 def test_enums(test_input: str, expected: c_ast.AST) -> None:
     tree = parse(test_input)
-    enum_type = tree.ext[0].type.type  # type: ignore
+    enum_type = tree.ext[0].type.type  # pyright: ignore
     assert isinstance(enum_type, c_ast.Enum)
     assert enum_type == expected
 
@@ -1558,8 +1558,8 @@ struct _on_exit_args {
 """
 
     s7_ast = parse(test_input, filename="test.c")
-    assert s7_ast.ext[0].type.decls[2].coord == Coord(6, 22, filename="test.c")  # type: ignore
-    assert s7_ast.ext[0].type.decls[3].coord == Coord(r"D:\eli\cpp_stuff\libc_include/sys/reent.h", 78, 22)  # type: ignore
+    assert s7_ast.ext[0].type.decls[2].coord == Coord(6, 22, filename="test.c")  # pyright: ignore
+    assert s7_ast.ext[0].type.decls[3].coord == Coord(r"D:\eli\cpp_stuff\libc_include/sys/reent.h", 78, 22)  # pyright: ignore
 
 
 @pytest.mark.parametrize(
@@ -1889,7 +1889,7 @@ void main(void)
     )
 
     assert tree.ext[2] == expected2
-    assert tree.ext[3].body.block_items[0].left.field.name == "Name"  # type: ignore
+    assert tree.ext[3].body.block_items[0].left.field.name == "Name"  # pyright: ignore
 
 
 def test_struct_bitfields():
@@ -2492,10 +2492,10 @@ int factorial(int p)
     assert tree.ext[0] == expected_assert_1
 
     expected_assert_2 = c_ast.StaticAssert(cond=c_ast.Constant("int", "2"), message=c_ast.Constant("string", '"456"'))
-    assert tree.ext[1].body.block_items[0] == expected_assert_2  # type: ignore
+    assert tree.ext[1].body.block_items[0] == expected_assert_2  # pyright: ignore
 
     expected_assert_3 = c_ast.StaticAssert(cond=c_ast.Constant("int", "3"), message=None)
-    assert tree.ext[1].body.block_items[2] == expected_assert_3  # type: ignore
+    assert tree.ext[1].body.block_items[2] == expected_assert_3  # pyright: ignore
 
 
 @pytest.mark.parametrize(
@@ -2542,7 +2542,7 @@ def test_escapes_in_unified_string_literals():
         tree = parse(test_input)
 
     expected = c_ast.Constant("string", r'"\123"')
-    assert tree.ext[0].init == expected  # type: ignore
+    assert tree.ext[0].init == expected  # pyright: ignore
 
 
 @pytest.mark.xfail(reason="TODO")
@@ -2560,7 +2560,7 @@ int main() {
 
     tree = parse(test_input)
 
-    assert tree.ext[0].body.block_items[0].args.exprs[1].value == r'"Wrong Params?\nUsage:\n%s <binary_file_path>\n"'  # type: ignore
+    assert tree.ext[0].body.block_items[0].args.exprs[1].value == r'"Wrong Params?\nUsage:\n%s <binary_file_path>\n"'  # pyright: ignore
 
 
 @pytest.mark.parametrize(
@@ -2580,7 +2580,7 @@ int main() {
 def test_unified_wstring_literals(test_input: str, expected: c_ast.AST):
     tree = parse(test_input)
 
-    assert tree.ext[0].init == expected  # type: ignore
+    assert tree.ext[0].init == expected  # pyright: ignore
 
 
 @pytest.mark.xfail(reason="TODO")
@@ -2588,14 +2588,14 @@ def test_inline_specifier():
     test_input = "static inline void inlinefoo(void);"
     tree = parse(test_input)
 
-    assert tree.ext[0].funcspec == ["inline"]  # type: ignore
+    assert tree.ext[0].funcspec == ["inline"]  # pyright: ignore
 
 
 def test_noreturn_specifier():
     test_input = "static _Noreturn void noreturnfoo(void);"
     tree = parse(test_input)
 
-    assert tree.ext[0].funcspec == ["_Noreturn"]  # type: ignore
+    assert tree.ext[0].funcspec == ["_Noreturn"]  # pyright: ignore
 
 
 @pytest.mark.xfail(reason="TODO")
@@ -2612,10 +2612,10 @@ int main() {
     tree = parse(test_input)
 
     expected_dim_1 = c_ast.Assignment(op="=", left=c_ast.Id("size"), right=c_ast.Constant("int", "5"))
-    assert tree.ext[0].body.block_items[1].type.dim == expected_dim_1  # type: ignore
+    assert tree.ext[0].body.block_items[1].type.dim == expected_dim_1  # pyright: ignore
 
     expected_dim_2 = c_ast.Id("*")
-    assert tree.ext[0].body.block_items[2].type.dim == expected_dim_2  # type: ignore
+    assert tree.ext[0].body.block_items[2].type.dim == expected_dim_2  # pyright: ignore
 
 
 @pytest.mark.xfail(reason="TODO")
@@ -2641,27 +2641,27 @@ _Pragma("other \"string\"")
 
     pragma1 = tree.ext[0]
     assert pragma1 == c_ast.Pragma("bar")
-    assert pragma1.coord.line_start == 2  # type: ignore
+    assert pragma1.coord.line_start == 2  # pyright: ignore
 
-    pragma2 = tree.ext[1].body.block_items[0]  # type: ignore
+    pragma2 = tree.ext[1].body.block_items[0]  # pyright: ignore
     assert pragma2 == c_ast.Pragma("foo")
-    assert pragma2.coord.line_start == 4  # type: ignore
+    assert pragma2.coord.line_start == 4  # pyright: ignore
 
-    pragma3 = tree.ext[1].body.block_items[2]  # type: ignore
+    pragma3 = tree.ext[1].body.block_items[2]  # pyright: ignore
     assert pragma3 == c_ast.Pragma("baz")
-    assert pragma3.coord.line_start == 6  # type: ignore
+    assert pragma3.coord.line_start == 6  # pyright: ignore
 
-    pragma4 = tree.ext[1].body.block_items[4]  # type: ignore
+    pragma4 = tree.ext[1].body.block_items[4]  # pyright: ignore
     assert pragma4 == c_ast.Pragma("")
-    assert pragma4.coord.line_start == 10  # type: ignore
+    assert pragma4.coord.line_start == 10  # pyright: ignore
 
-    pragma5 = tree.ext[2].body.block_items[0]  # type: ignore
+    pragma5 = tree.ext[2].body.block_items[0]  # pyright: ignore
     assert pragma5 == c_ast.Pragma("baz")
-    assert pragma5.coord.line_start == 13  # type: ignore
+    assert pragma5.coord.line_start == 13  # pyright: ignore
 
     pragma6 = tree.ext[3]
     assert pragma6 == c_ast.Pragma(r'"other \"string\""')
-    assert pragma6.coord.line_start == 15  # type: ignore
+    assert pragma6.coord.line_start == 15  # pyright: ignore
 
 
 @pytest.mark.xfail(reason="TODO")
@@ -2756,4 +2756,4 @@ void main() {
         ),
     ]
 
-    assert c_ast.compare(tree.ext[0].body.block_items, expected_list)  # type: ignore
+    assert c_ast.compare(tree.ext[0].body.block_items, expected_list)  # pyright: ignore

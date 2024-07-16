@@ -196,10 +196,10 @@ void foo(void){
     assert match_number_of_node_instances(tree, c_ast.EmptyStatement, 3)
     assert match_number_of_node_instances(tree, c_ast.Return, 1)
 
-    assert tree.ext[0].body.block_items[0].coord.line_start == 3  # type: ignore
-    assert tree.ext[0].body.block_items[1].coord.line_start == 4  # type: ignore
-    assert tree.ext[0].body.block_items[2].coord.line_start == 4  # type: ignore
-    assert tree.ext[0].body.block_items[3].coord.line_start == 6  # type: ignore
+    assert tree.ext[0].body.block_items[0].coord.line_start == 3  # pyright: ignore
+    assert tree.ext[0].body.block_items[1].coord.line_start == 4  # pyright: ignore
+    assert tree.ext[0].body.block_items[2].coord.line_start == 4  # pyright: ignore
+    assert tree.ext[0].body.block_items[3].coord.line_start == 6  # pyright: ignore
 
 
 @pytest.mark.xfail(reason="TODO")
@@ -225,19 +225,19 @@ int foo(void) {
 """
 
     tree1 = parse(test_input_1)
-    switch = tree1.ext[0].body.block_items[0]  # type: ignore
+    switch = tree1.ext[0].body.block_items[0]  # pyright: ignore
 
-    block = switch.stmt.block_items  # type: ignore
-    assert len(block) == 4  # type: ignore
+    block = switch.stmt.block_items  # pyright: ignore
+    assert len(block) == 4  # pyright: ignore
 
-    assert is_case_node(block[0], "10")  # type: ignore
-    assert len(block[0].stmts) == 3  # type: ignore
+    assert is_case_node(block[0], "10")  # pyright: ignore
+    assert len(block[0].stmts) == 3  # pyright: ignore
 
-    assert is_case_node(block[1], "20")  # type: ignore
-    assert len(block[1].stmts) == 0  # type: ignore
+    assert is_case_node(block[1], "20")  # pyright: ignore
+    assert len(block[1].stmts) == 0  # pyright: ignore
 
-    assert is_case_node(block[2], "30")  # type: ignore
-    assert len(block[2].stmts) == 1  # type: ignore
+    assert is_case_node(block[2], "30")  # pyright: ignore
+    assert len(block[2].stmts) == 1  # pyright: ignore
 
     assert isinstance(block[3], c_ast.Default)
 
@@ -258,25 +258,25 @@ int foo(void) {
 """
 
     tree2 = parse(test_input_2)
-    switch = tree2.ext[0].body.block_items[0]  # type: ignore
+    switch = tree2.ext[0].body.block_items[0]  # pyright: ignore
 
-    block = switch.stmt.block_items  # type: ignore
-    assert len(block) == 5  # type: ignore
+    block = switch.stmt.block_items  # pyright: ignore
+    assert len(block) == 5  # pyright: ignore
 
     assert isinstance(block[0], c_ast.Default)
-    assert len(block[0].stmts) == 2  # type: ignore
+    assert len(block[0].stmts) == 2  # pyright: ignore
 
-    assert is_case_node(block[1], "10")  # type: ignore
-    assert len(block[1].stmts) == 0  # type: ignore
+    assert is_case_node(block[1], "10")  # pyright: ignore
+    assert len(block[1].stmts) == 0  # pyright: ignore
 
-    assert is_case_node(block[2], "20")  # type: ignore
-    assert len(block[2].stmts) == 0  # type: ignore
+    assert is_case_node(block[2], "20")  # pyright: ignore
+    assert len(block[2].stmts) == 0  # pyright: ignore
 
-    assert is_case_node(block[3], "30")  # type: ignore
-    assert len(block[3].stmts) == 0  # type: ignore
+    assert is_case_node(block[3], "30")  # pyright: ignore
+    assert len(block[3].stmts) == 0  # pyright: ignore
 
-    assert is_case_node(block[4], "40")  # type: ignore
-    assert len(block[4].stmts) == 1  # type: ignore
+    assert is_case_node(block[4], "40")  # pyright: ignore
+    assert len(block[4].stmts) == 1  # pyright: ignore
 
     test_input_3 = r"""
 int foo(void) {
@@ -287,9 +287,9 @@ int foo(void) {
 """
 
     tree3 = parse(test_input_3)
-    switch = tree3.ext[0].body.block_items[0]  # type: ignore
+    switch = tree3.ext[0].body.block_items[0]  # pyright: ignore
 
-    assert switch.stmt.block_items == []  # type: ignore
+    assert switch.stmt.block_items == []  # pyright: ignore
 
 
 @pytest.mark.parametrize(

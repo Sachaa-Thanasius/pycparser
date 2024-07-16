@@ -24,9 +24,9 @@ import sys
 from collections.abc import Callable
 from functools import reduce
 from types import MemberDescriptorType
-from typing import ClassVar, Final, Protocol, TypeVar, final, get_origin
+from typing import ClassVar, Final, Optional, Protocol, TypeVar, final, get_origin
 
-from ._typing_compat import Self, dataclass_transform, override
+from ._typing_compat import Self, TypeAlias, dataclass_transform, override
 
 
 _DBT_contra = TypeVar("_DBT_contra", bound="DatumBase", contravariant=True)
@@ -35,6 +35,12 @@ _DBT_contra = TypeVar("_DBT_contra", bound="DatumBase", contravariant=True)
 class _ClueGenDescriptor(Protocol[_DBT_contra]):
     def __get__(self, instance: _DBT_contra, owner: type[_DBT_contra]) -> object: ...
     def __set_name__(self, owner: type[_DBT_contra], name: str) -> None: ...
+
+
+_ClueGenable: TypeAlias = Callable[[type[_DBT_contra]], tuple[str, Optional[dict[str, object]]]]
+
+
+_MISSING = object()
 
 
 @final
@@ -49,12 +55,11 @@ class _Nothing:
 CLUEGEN_NOTHING: Final = _Nothing()
 """Sentinel that can act as a placeholder for a mutable default value in a signature."""
 
-_MISSING = object()
 
 __all__ = ("all_clues", "all_defaults", "cluegen", "DatumBase", "Datum")
 
 
-def cluegen(func: Callable[[type[_DBT_contra]], str]) -> _ClueGenDescriptor[_DBT_contra]:
+def cluegen(func: _ClueGenable[_DBT_contra]) -> _ClueGenDescriptor[_DBT_contra]:
     """Create a custom ClueGen descriptor.
 
     Extended Summary
@@ -73,10 +78,12 @@ def cluegen(func: Callable[[type[_DBT_contra]], str]) -> _ClueGenDescriptor[_DBT
             global_ns = dict(owner_mod.__dict__, CLUEGEN_NOTHING=CLUEGEN_NOTHING)
 
         local_ns: dict[str, Callable[..., object]] = {}
-        code = func(owner)
+        source, annotations = func(owner)
 
-        exec(code, global_ns, local_ns)  # noqa: S102
+        exec(source, global_ns, local_ns)  # noqa: S102
         method = local_ns[func.__name__]
+        if annotations is not None:
+            method.__annotations__ |= annotations
 
         setattr(owner, func.__name__, method)
         return method.__get__(instance, owner)
@@ -165,12 +172,11 @@ class Datum(DatumBase):
         cls.__match_args__ = tuple(all_clues(cls))
 
     @cluegen
-    def __init__(cls: type[Self]) -> str:  # pyright: ignore
+    def __init__(cls: type[Self]) -> tuple[str, dict[str, object]]:  # pyright: ignore
         clues = all_clues(cls)
         defaults, mutable_defaults = all_defaults(cls, clues)
 
-        args = ((name, f'{name}: {getattr(clue, "__name__", repr(clue))}') for name, clue in clues.items())
-        args = ", ".join((f"{arg} = {defaults[name]!r}" if name in defaults else arg) for name, arg in args)
+        args = ", ".join((f"{name} = {defaults[name]!r}" if name in defaults else name) for name in clues)
         body = "\n".join(
             (
                 *(f"    self.{name} = {name}" for name in clues if name not in mutable_defaults),
@@ -180,16 +186,16 @@ class Datum(DatumBase):
                 ),
             )
         )
-        return f"def __init__(self, {args}):\n{body}\n"  # noqa: PLE0101
+        return f"def __init__(self, {args}) -> None:\n{body}\n", clues  # noqa: PLE0101
 
     @cluegen
-    def __repr__(cls: type[Self]) -> str:  # pyright: ignore
+    def __repr__(cls: type[Self]) -> tuple[str, None]:  # pyright: ignore
         clues = all_clues(cls)
         fmt = ", ".join(f"{name}={{self.{name}!r}}" for name in clues)
-        return f'def __repr__(self) -> str:\n    return f"{{type(self).__name__}}({fmt})"'
+        return f'def __repr__(self) -> str:\n    return f"{{type(self).__name__}}({fmt})"', None
 
     @cluegen
-    def __eq__(cls: type[Self]) -> str:  # pyright: ignore  # noqa: PLE0302
+    def __eq__(cls: type[Self]) -> tuple[str, None]:  # pyright: ignore  # noqa: PLE0302
         clues = all_clues(cls)
         selfvals = ", ".join(f"self.{name}" for name in clues)
         othervals = ", ".join(f"other.{name}" for name in clues)
@@ -199,4 +205,4 @@ class Datum(DatumBase):
             f"        return NotImplemented\n"
             f"\n"
             f"    return ({selfvals},) == ({othervals},)\n"
-        )
+        ), None

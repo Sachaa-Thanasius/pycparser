@@ -106,12 +106,11 @@ else:
             )
 
         @cluegen
-        def __init__(cls: type[Self]) -> str:  # pyright: ignore
+        def __init__(cls: type[Self]) -> tuple[str, dict[str, object]]:  # pyright: ignore
             clues = all_clues(cls)
             defaults, mutable_defaults = all_defaults(cls, clues)
 
-            args = ((name, f'{name}: {getattr(clue, "__name__", repr(clue))}') for name, clue in clues.items())
-            args = ", ".join((f"{arg} = {defaults[name]!r}" if name in defaults else arg) for name, arg in args)
+            args = ", ".join((f"{name} = {defaults[name]!r}" if name in defaults else name) for name in clues)
             body = "\n".join(
                 (
                     *(f"    self.{name} = {name}" for name in clues if name not in mutable_defaults),
@@ -122,7 +121,7 @@ else:
                     "    self.coord = coord",
                 )
             )
-            return f'def __init__(self, {args}{"," if args else ""} *, coord: Optional[int] = None):\n{body}\n'  # noqa: PLE0101
+            return f'def __init__(self, {args}{"," if args else ""} *, coord: Optional[int] = None) -> None:\n{body}\n', clues  # noqa: PLE0101
 
         __repr__ = object.__repr__  # NOTE: Delegate pretty-printing to dump() for the moment.
 

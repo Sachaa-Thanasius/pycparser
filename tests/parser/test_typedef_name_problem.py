@@ -149,8 +149,8 @@ def test_ambiguous_parameters(test_input: str, expected_inner_param_1: c_ast.AST
     #  typedef name."
 
     tree = parse(test_input)
-    assert tree.ext[1].type.args.params[0] == expected_inner_param_1  # type: ignore
-    assert tree.ext[2].type.args.params[0] == expected_inner_param_2  # type: ignore
+    assert tree.ext[1].type.args.params[0] == expected_inner_param_1  # pyright: ignore
+    assert tree.ext[2].type.args.params[0] == expected_inner_param_2  # pyright: ignore
 
 
 @pytest.mark.xfail(reason="TODO")
@@ -171,7 +171,7 @@ TT x = 5;
     expected_after_end = c_ast.Decl(
         "x", c_ast.TypeDecl("x", type=c_ast.IdType(["TT"])), init=c_ast.Constant("int", "5")
     )
-    assert tree1.ext[1].body.block_items[0] == expected_before_end  # type: ignore
+    assert tree1.ext[1].body.block_items[0] == expected_before_end  # pyright: ignore
     assert tree1.ext[2] == expected_after_end
 
     # this should be recognized even with an initializer
@@ -184,7 +184,7 @@ void foo(void) {
     tree2 = parse(test_input_2)
 
     expected = c_ast.Decl("TT", c_ast.TypeDecl("TT", type=c_ast.IdType(["unsigned"])), init=c_ast.Constant("int", "10"))
-    assert tree2.ext[1].body.block_items[0] == expected  # type: ignore
+    assert tree2.ext[1].body.block_items[0] == expected  # pyright: ignore
 
     # before the second local variable, TT is a type; after, it's a
     # variable
@@ -210,8 +210,8 @@ void foo(void) {
         c_ast.TypeDecl("TT", type=c_ast.IdType(names=["unsigned"])),
         init=c_ast.Constant("int", "10"),
     )
-    assert tree3.ext[1].body.block_items[0] == expected_before_end  # type: ignore
-    assert tree3.ext[1].body.block_items[1] == expected_after_end  # type: ignore
+    assert tree3.ext[1].body.block_items[0] == expected_before_end  # pyright: ignore
+    assert tree3.ext[1].body.block_items[1] == expected_after_end  # pyright: ignore
 
     # a variable and its type can even share the same name
     test_input_4 = r"""
@@ -238,8 +238,8 @@ void foo(void) {
         init=c_ast.BinaryOp(op="*", left=c_ast.Id("TT"), right=c_ast.Constant("int", "2")),
     )
 
-    assert tree4.ext[1].body.block_items[0] == expected_before_end  # type: ignore
-    assert tree4.ext[1].body.block_items[1] == expected_after_end  # type: ignore
+    assert tree4.ext[1].body.block_items[0] == expected_before_end  # pyright: ignore
+    assert tree4.ext[1].body.block_items[1] == expected_after_end  # pyright: ignore
 
     # ensure an error is raised if a type, redeclared as a variable, is
     # used as a type
@@ -265,8 +265,8 @@ void foo(void) {
     expected_before_end = c_ast.Decl("TT", c_ast.TypeDecl("TT", type=c_ast.IdType(["unsigned"])))
     expected_after_end = c_ast.Decl("uu", c_ast.TypeDecl("uu", type=c_ast.IdType(["unsigned"])))
 
-    assert tree6.ext[1].body.block_items[0] == expected_before_end  # type: ignore
-    assert tree6.ext[1].body.block_items[1] == expected_after_end  # type: ignore
+    assert tree6.ext[1].body.block_items[0] == expected_before_end  # pyright: ignore
+    assert tree6.ext[1].body.block_items[1] == expected_after_end  # pyright: ignore
 
     # reusing a type name should work after a pointer
     test_input_7 = r"""
@@ -278,7 +278,7 @@ void foo(void) {
     tree7 = parse(test_input_7)
 
     expected = c_ast.Decl("TT", c_ast.PtrDecl(quals=[], type=c_ast.TypeDecl("TT", type=c_ast.IdType(["unsigned"]))))
-    assert tree7.ext[1].body.block_items[0] == expected  # type: ignore
+    assert tree7.ext[1].body.block_items[0] == expected  # pyright: ignore
 
     # redefine a name in the middle of a multi-declarator declaration
     test_input_8 = r"""
@@ -308,9 +308,9 @@ void foo(void) {
         ),
     )
 
-    assert tree8.ext[1].body.block_items[0] == expected_first  # type: ignore
-    assert tree8.ext[1].body.block_items[1] == expected_second  # type: ignore
-    assert tree8.ext[1].body.block_items[2] == expected_third  # type: ignore
+    assert tree8.ext[1].body.block_items[0] == expected_first  # pyright: ignore
+    assert tree8.ext[1].body.block_items[1] == expected_second  # pyright: ignore
+    assert tree8.ext[1].body.block_items[2] == expected_third  # pyright: ignore
 
     # Don't test this until we have support for it
     # self.assertEqual(expand_init(items[0].init),

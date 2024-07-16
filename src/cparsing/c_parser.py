@@ -1,6 +1,7 @@
 # pyright: reportRedeclaration=none, reportUndefinedVariable=none
 """Module for parsing C tokens into an AST."""
 
+from functools import partial
 from typing import TYPE_CHECKING, Any, NoReturn, Optional, TypedDict, TypeVar, Union, cast, overload
 
 from sly import Parser
@@ -11,11 +12,11 @@ from . import c_ast, c_context
 from ._cluegen import Datum
 from ._typing_compat import NotRequired, Self, override
 from .c_lexer import CLexer
-from .utils import Coord
+from .utils import Coord, SubstituteDecorator, substitute
 
 
 if TYPE_CHECKING:
-    from sly.types import _, subst
+    from sly.types import _
 
 _DeclarationT = TypeVar("_DeclarationT", bound=Union[c_ast.Typedef, c_ast.Decl, c_ast.Typename])
 _ModifierT = TypeVar("_ModifierT", bound=c_ast.TypeModifier)
@@ -132,22 +133,14 @@ def fix_atomic_specifiers(decl: Union[c_ast.Typedef, c_ast.Decl]) -> Any:
             typ = typ.type
         except AttributeError:
             return decl
+
+    assert typ.quals is not None
     if "_Atomic" in typ.quals and "_Atomic" not in decl.quals:
         decl.quals.append("_Atomic")
     if typ.declname is None:
         typ.declname = decl.name
 
     return decl
-
-
-def _extract_nested_case(case_node: Union[c_ast.Case, c_ast.Default], stmts_list: list[c_ast.AST]) -> None:
-    """Recursively extract consecutive Case statements that are made nested by the parser and add them to
-    `stmts_list`.
-    """
-
-    if isinstance(case_node.stmts[0], (c_ast.Case, c_ast.Default)):
-        stmts_list.append(case_node.stmts.pop())
-        _extract_nested_case(cast(Union[c_ast.Case, c_ast.Default], stmts_list[-1]), stmts_list)
 
 
 def fix_switch_cases(switch_node: c_ast.Switch) -> c_ast.Switch:
@@ -237,7 +230,12 @@ def fix_switch_cases(switch_node: c_ast.Switch) -> c_ast.Switch:
             # 1. Add it to the Compound and mark as "last case"
             # 2. If its immediate child is also a Case or Default, promote it to a sibling.
             new_compound.block_items.append(child)
-            _extract_nested_case(child, new_compound.block_items)
+            while isinstance(child.stmts[0], (c_ast.Case, c_ast.Default)):
+                new_compound.block_items.append(child.stmts.pop())
+                child = new_compound.block_items[-1]
+
+            # _extract_nested_case(child, new_compound.block_items)
+            print(new_compound.block_items)
             last_case = cast(Union[c_ast.Case, c_ast.Default], new_compound.block_items[-1])
         else:
             # Other statements are added as children to the last case, if it exists.
@@ -254,10 +252,7 @@ def fix_switch_cases(switch_node: c_ast.Switch) -> c_ast.Switch:
 
 
 class CParser(Parser):
-    debugfile = "sly_cparser.out"
-
     tokens = CLexer.tokens
-
     precedence = (
         ("left", LOR),
         ("left", LAND),
@@ -270,6 +265,9 @@ class CParser(Parser):
         ("left", PLUS, MINUS),
         ("left", TIMES, DIVIDE, MOD),
     )
+    debugfile = "sly_cparser.out"
+
+    subst: SubstituteDecorator = partial(substitute, namespace=vars())
 
     def __init__(self, ctx: "c_context.CContext") -> None:
         self.ctx = ctx
@@ -500,12 +498,12 @@ class CParser(Parser):
         # The modifier may be a nested list. Reach its tail.
         modifier_tail = modifier
         while modifier_tail.type:
-            modifier_tail = modifier_tail.type
+            modifier_tail = modifier_tail.type  # pyright: ignore
 
         if isinstance(decl, c_ast.TypeDecl):
             # If the decl is a basic type, just tack the modifier onto it.
-            modifier_tail.type = decl
-            return modifier
+            modifier_tail.type = decl  # pyright: ignore
+            return modifier  # pyright: ignore
         else:
             # Otherwise, the decl is a list of modifiers.
             # Reach its tail and splice the modifier onto the tail, pointing to the underlying basic type.
@@ -513,8 +511,8 @@ class CParser(Parser):
             while not isinstance(decl_tail.type, c_ast.TypeDecl):
                 decl_tail = decl_tail.type
 
-            modifier_tail.type = decl_tail.type
-            decl_tail.type = modifier_head
+            modifier_tail.type = decl_tail.type  # pyright: ignore
+            decl_tail.type = modifier_head  # pyright: ignore
             return decl
 
     # endregion
@@ -609,7 +607,7 @@ class CParser(Parser):
         function definitions.
         """
 
-        # print("---- Should be here.")
+        print("---- Function declaration")
 
         if p.declaration_specifiers:
             spec: _DeclarationSpecifiers = p.declaration_specifiers
@@ -962,8 +960,7 @@ class CParser(Parser):
         klass = c_ast.Struct if (p.struct_or_union == "struct") else c_ast.Union
         # Empty sequence means an empty list of members
         decls = [decl for decl_list in p.struct_declaration for decl in decl_list if decl is not None]
-        coord = Coord.from_prod(p, self)
-        return klass(name=None, decls=decls, coord=coord)
+        return klass(name=None, decls=decls, coord=Coord.from_prod(p, self))
 
     @_(
         "struct_or_union ID lbrace { struct_declaration } rbrace",
@@ -973,8 +970,7 @@ class CParser(Parser):
         klass = c_ast.Struct if (p.struct_or_union == "struct") else c_ast.Union
         # Empty sequence means an empty list of members
         decls = [decl for decl_list in p.struct_declaration for decl in decl_list]
-        coord = Coord.from_prod(p, self)
-        return klass(name=p[1], decls=decls, coord=coord)
+        return klass(name=p[1], decls=decls, coord=Coord.from_prod(p, self))
 
     @_("STRUCT", "UNION")
     def struct_or_union(self, p: YaccProd):
@@ -1037,7 +1033,7 @@ class CParser(Parser):
 
     @_('":" constant_expression')
     def struct_declarator(self, p: YaccProd) -> _StructDeclaratorDict:
-        return {"decl": c_ast.TypeDecl(None, None, None, None), "bitsize": p.constant_expression}
+        return {"decl": c_ast.TypeDecl(quals=None), "bitsize": p.constant_expression}
 
     @_("ENUM ID", "ENUM TYPEID")
     def enum_specifier(self, p: YaccProd):
@@ -1101,8 +1097,6 @@ class CParser(Parser):
     @subst_ids
     @_("direct_${_SUB1}_declarator")
     def _SUB1_declarator(self, p: YaccProd) -> Union[c_ast.TypeDecl, c_ast.TypeModifier]:
-        # print("---- here 1")
-        # print(c_ast.dump(p[0]))
         return p[0]
 
     @subst_ids
@@ -1113,8 +1107,6 @@ class CParser(Parser):
     @subst_ids
     @_("${_SUB2}")
     def direct__SUB1_declarator(self, p: YaccProd):
-        # print("---- here 3")
-        # print(f"processed name {p[0]}")
         return c_ast.TypeDecl(declname=p[0], quals=None, coord=Coord.from_prod(p, self))
 
     @subst({"_SUB1": "id"}, {"_SUB1": "typeid"})
@@ -1185,8 +1177,9 @@ class CParser(Parser):
         'direct_${_SUB1}_declarator "(" [ identifier_list ] ")"',
     )
     def direct__SUB1_declarator(self, p: YaccProd):
-        print("---- here 9")
-        print(f"{self.lookahead=}")
+        # print("---- here 9")
+        # print(f"{self.lookahead=}")
+
         # NOTE: This first line depends on an implementation detail -- optional components are in tuples when accessed
         # with numerical index -- to determine the difference.
         args = p[2] if not isinstance(p[2], tuple) else p[2][0]
@@ -1205,12 +1198,12 @@ class CParser(Parser):
             for param in func.args.params:
                 if isinstance(param, c_ast.EllipsisParam):
                     break
-                assert isinstance(param.name, str)
+
                 self.add_identifier_to_scope(param.name, param.coord)
 
         return self._type_modify_decl(decl=p[0], modifier=func)
 
-    del subst_ids  # Explicit cleanup: subst() is temporary, but this isn't.
+    del subst_ids  # Explicit cleanup required.
 
     # endregion
 
@@ -1300,7 +1293,6 @@ class CParser(Parser):
         if not spec.type:
             spec.type.append(c_ast.IdType(["int"], coord=Coord.from_node(p.declaration_specifiers, self)))
 
-        print(f"{spec.type=}")
         # Parameters can have the same names as typedefs. The trouble is that the parameter's name gets grouped into
         # declaration_specifiers, making it look like an old-style declaration; compensate.
         if len(spec.type) > 1 and len(spec.type[-1].names) == 1 and self.is_type_in_scope(spec.type[-1].names[0]):
@@ -1312,7 +1304,7 @@ class CParser(Parser):
                 name="",
                 quals=spec.qual,
                 align=None,
-                type=p.abstract_declarator or c_ast.TypeDecl(None, None, None, None),
+                type=p.abstract_declarator or c_ast.TypeDecl(quals=None),
                 coord=Coord.from_node(p.declaration_specifiers, self),
             )
             typename = spec.type
@@ -1376,7 +1368,7 @@ class CParser(Parser):
             name="",
             quals=spec_list.qual[:],
             align=None,
-            type=p.abstract_declarator or c_ast.TypeDecl(None, None, None, None),
+            type=p.abstract_declarator or c_ast.TypeDecl(quals=None),
             coord=Coord.from_node(spec_list, self),
         )
 
@@ -1384,7 +1376,7 @@ class CParser(Parser):
 
     @_("pointer")
     def abstract_declarator(self, p: YaccProd):
-        dummytype = c_ast.TypeDecl(None, None, None, None)
+        dummytype = c_ast.TypeDecl(quals=None)
         return self._type_modify_decl(decl=dummytype, modifier=p.pointer)
 
     @_("pointer direct_abstract_declarator")
@@ -1417,11 +1409,12 @@ class CParser(Parser):
 
     @_('"[" [ type_qualifier_list ] [ assignment_expression ] "]"')
     def direct_abstract_declarator(self, p: YaccProd):
-        dim = p.assignment_expression
-        dim_quals: list[str] = p.type_qualifier_list or []
-        type_ = c_ast.TypeDecl(None, None, None, None)
-
-        return c_ast.ArrayDecl(type=type_, dim=dim, dim_quals=dim_quals, coord=Coord.from_prod(p, self))
+        return c_ast.ArrayDecl(
+            type=c_ast.TypeDecl(quals=None),
+            dim=p.assignment_expression,
+            dim_quals=p.type_qualifier_list or [],
+            coord=Coord.from_prod(p, self),
+        )
 
     @_('direct_abstract_declarator "[" TIMES "]"')
     def direct_abstract_declarator(self, p: YaccProd):
@@ -1437,7 +1430,7 @@ class CParser(Parser):
     @_('"[" TIMES "]"')
     def direct_abstract_declarator(self, p: YaccProd):
         return c_ast.ArrayDecl(
-            type=c_ast.TypeDecl(None, None, None, None),
+            type=c_ast.TypeDecl(quals=None),
             dim=c_ast.Id(p[2], coord=Coord.from_prod(p, self)),
             dim_quals=[],
             coord=Coord.from_prod(p, self),
@@ -1456,7 +1449,7 @@ class CParser(Parser):
     def direct_abstract_declarator(self, p: YaccProd):
         return c_ast.FuncDecl(
             args=p.parameter_type_list,
-            type=c_ast.TypeDecl(None, None, None, None),
+            type=c_ast.TypeDecl(quals=None),
             coord=Coord.from_prod(p, self),
         )
 
@@ -1482,7 +1475,7 @@ class CParser(Parser):
         so ignore them.
         """
 
-        print("---- here 48290")
+        print("---- function body")
         block_items = [item for item_list in p.block_item for item in item_list if item is not None]
         return c_ast.Compound(block_items=block_items, coord=Coord.from_prod(p, self))
 
