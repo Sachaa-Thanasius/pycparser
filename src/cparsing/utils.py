@@ -43,7 +43,7 @@ class Coord(Datum):
     def __str__(self) -> str:
         line_end = self.line_end if (self.line_end is not None) else "?"
         col_end = self.col_end if (self.col_end is not None) else "?"
-        return f"{self.filename} | {self.line_start}:{self.col_start}-{line_end}:{col_end}"
+        return f"{self.filename} | {self.line_start}:{self.col_start} - {line_end}:{col_end}"
 
 
 class SubstituteDecorator(Protocol):

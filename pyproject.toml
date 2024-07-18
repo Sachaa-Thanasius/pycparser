@@ -196,13 +196,13 @@ keep-runtime-typing = true
 # ---- Type-checking config
 
 [tool.pyright]
-include = ["src/cparsing"]
+include = ["src/cparsing", "tests"]
 pythonVersion = "3.9"
 pythonPlatform = "All"
 typeCheckingMode = "strict"
 
 reportPrivateUsage = "none"                    # We're the package; of course we're accessing internals.
-reportUnnecessaryIsInstance = "none"           # We should account for garbage input from users.
+reportUnnecessaryIsInstance = "information"           # We should account for garbage input from users.
 reportUninitializedInstanceVariable = "none"   # Nice as an infrequent checkup, but usually noisy.
 reportCallInDefaultInitializer = "warning"
 reportImplicitOverride = "warning"

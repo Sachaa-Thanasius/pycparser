@@ -1,4 +1,4 @@
-#-----------------------------------------------------------------
+# -----------------------------------------------------------------
 # pycparser: func_calls.py
 #
 # Using pycparser for printing out all the calls of some function
@@ -6,40 +6,40 @@
 #
 # Eli Bendersky [https://eli.thegreenplace.net/]
 # License: BSD
-#-----------------------------------------------------------------
-import sys
+# -----------------------------------------------------------------
+from cparsing import c_ast, parse_file
 
-# This is not required if you've installed pycparser into
-# your site-packages/ with setup.py
-sys.path.extend(['.', '..'])
 
-from pycparser import c_ast, parse_file
-
-# A visitor with some state information (the funcname it's looking for)
 class FuncCallVisitor(c_ast.NodeVisitor):
-    def __init__(self, funcname):
+    """A visitor with some state information, namely the funcname it's looking for."""
+
+    def __init__(self, funcname: str) -> None:
         self.funcname = funcname
 
-    def visit_FuncCall(self, node):
+    def visit_FuncCall(self, node: c_ast.FuncCall) -> None:
         if node.name.name == self.funcname:
-            print('%s called at %s' % (self.funcname, node.name.coord))
+            print(f"{self.funcname} called at {node.name.coord}")
         # Visit args in case they contain more func calls.
         if node.args:
-            self.visit(node.args)
+            self.generic_visit(node)
 
 
-def show_func_calls(filename, funcname):
-    ast = parse_file(filename, use_cpp=True)
+def show_func_calls(filename: str, funcname: str) -> None:
+    tree = parse_file(filename, use_cpp=True)
     v = FuncCallVisitor(funcname)
-    v.visit(ast)
+    v.visit(tree)
+
+
+def main() -> None:
+    import argparse
+
+    argparser = argparse.ArgumentParser()
+    argparser.add_argument("filename", default="examples/c_files/basic.c")
+    argparser.add_argument("func", default="foo")
+    args = argparser.parse_args()
+
+    show_func_calls(args.filename, args.func)
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 2:
-        filename = sys.argv[1]
-        func = sys.argv[2]
-    else:
-        filename = 'examples/c_files/basic.c'
-        func = 'foo'
-
-    show_func_calls(filename, func)
+    raise SystemExit(main())

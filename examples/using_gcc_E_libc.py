@@ -1,4 +1,4 @@
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 # pycparser: using_gcc_E_libc.py
 #
 # Similar to the using_cpp_libc.py example, but uses 'gcc -E' instead
@@ -7,24 +7,21 @@
 #
 # Eli Bendersky [https://eli.thegreenplace.net/]
 # License: BSD
-#-------------------------------------------------------------------------------
-import sys
+# -------------------------------------------------------------------------------
+from cparsing import c_ast, parse_file
 
-# This is not required if you've installed pycparser into
-# your site-packages/ with setup.py
-#
-sys.path.extend(['.', '..'])
 
-from pycparser import parse_file
+def main() -> None:
+    import argparse
+
+    argparser = argparse.ArgumentParser()
+    argparser.add_argument("filename", default="examples/c_files/year.c")
+    args = argparser.parse_args()
+    filename: str = args.filename
+
+    ast = parse_file(filename, use_cpp=True, cpp_path="gcc", cpp_args=["-E", r"-Iutils/fake_libc_include"])
+    print(c_ast.dump(ast))
 
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        filename  = sys.argv[1]
-    else:
-        filename = 'examples/c_files/year.c'
-
-    ast = parse_file(filename, use_cpp=True,
-            cpp_path='gcc',
-            cpp_args=['-E', r'-Iutils/fake_libc_include'])
-    ast.show()
+    raise SystemExit(main())

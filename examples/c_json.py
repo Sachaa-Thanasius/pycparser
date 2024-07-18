@@ -1,4 +1,4 @@
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 # pycparser: c_json.py
 #
 # by Michael White (@mypalmike)
@@ -33,67 +33,57 @@
 #             ]
 #         }
 #     }
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 import json
-import sys
 import re
+from collections.abc import Callable
+from typing import Any, Optional
 
-# This is not required if you've installed pycparser into
-# your site-packages/ with setup.py
-#
-sys.path.extend(['.', '..'])
-
-from pycparser import parse_file, c_ast
-from pycparser.plyparser import Coord
+from cparsing import c_ast, parse_file
+from cparsing.utils import Coord
 
 
-RE_CHILD_ARRAY = re.compile(r'(.*)\[(.*)\]')
-RE_INTERNAL_ATTR = re.compile('__.*__')
+RE_CHILD_ARRAY = re.compile(r"(.*)\[(.*)\]")
+RE_INTERNAL_ATTR = re.compile("__.*__")
 
 
 class CJsonError(Exception):
     pass
 
 
-def memodict(fn):
-    """ Fast memoization decorator for a function taking a single argument """
-    class memodict(dict):
-        def __missing__(self, key):
+def memodict(fn: Callable[[c_ast.AST], set[str]]) -> Callable[[c_ast.AST], set[str]]:
+    """Fast memoization decorator for a function taking a single argument"""
+
+    class memodict(dict[c_ast.AST, set[str]]):
+        def __missing__(self, key: c_ast.AST) -> set[str]:
             ret = self[key] = fn(key)
             return ret
+
     return memodict().__getitem__
 
 
 @memodict
-def child_attrs_of(klass):
-    """
-    Given a Node class, get a set of child attrs.
-    Memoized to avoid highly repetitive string manipulation
+def child_attrs_of(klass: c_ast.AST) -> set[str]:
+    """Given a Node class, get a set of child attrs. Memoized to avoid highly repetitive string manipulation."""
 
-    """
-    non_child_attrs = set(klass.attr_names)
-    all_attrs = set([i for i in klass.__slots__ if not RE_INTERNAL_ATTR.match(i)])
+    non_child_attrs = set(klass._fields)
+    all_attrs = {i for i in klass.__slots__ if not RE_INTERNAL_ATTR.match(i)}
     return all_attrs - non_child_attrs
 
 
-def to_dict(node):
-    """ Recursively convert an ast into dict representation. """
+def to_dict(node: c_ast.AST):
+    """Recursively convert an ast into dict representation."""
+
     klass = node.__class__
 
-    result = {}
-
-    # Metadata
-    result['_nodetype'] = klass.__name__
-
-    # Local node attributes
-    for attr in klass.attr_names:
-        result[attr] = getattr(node, attr)
-
-    # Coord object
-    if node.coord:
-        result['coord'] = str(node.coord)
-    else:
-        result['coord'] = None
+    result: dict[str, object] = {
+        # Metadata
+        "_nodetype": klass.__name__,
+        # Local node attributes
+        **{attr: getattr(node, attr) for attr in klass._fields},
+        # Coord object
+        "coord": str(node.coord) if node.coord else None,
+    }
 
     # Child attributes
     for child_name, child in node.children():
@@ -105,9 +95,11 @@ def to_dict(node):
             # arrays come in order, so we verify and append.
             result[array_name] = result.get(array_name, [])
             if array_index != len(result[array_name]):
-                raise CJsonError('Internal ast error. Array {} out of order. '
-                    'Expected index {}, got {}'.format(
-                    array_name, len(result[array_name]), array_index))
+                msg = (
+                    f"Internal ast error. Array {array_name} out of order. "
+                    f"Expected index {len(result[array_name])}, got {array_index}."
+                )
+                raise CJsonError(msg)
             result[array_name].append(to_dict(child))
         else:
             result[child_name] = to_dict(child)
@@ -120,53 +112,59 @@ def to_dict(node):
     return result
 
 
-def to_json(node, **kwargs):
-    """ Convert ast node to json string """
+def to_json(node: c_ast.AST, **kwargs: object) -> str:
+    """Convert ast node to json string."""
+
     return json.dumps(to_dict(node), **kwargs)
 
 
-def file_to_dict(filename):
-    """ Load C file into dict representation of ast """
-    ast = parse_file(filename, use_cpp=True)
-    return to_dict(ast)
+def file_to_dict(filename: str):
+    """Load C file into dict representation of ast."""
+
+    tree = parse_file(filename, use_cpp=True)
+    return to_dict(tree)
 
 
-def file_to_json(filename, **kwargs):
-    """ Load C file into json string representation of ast """
-    ast = parse_file(filename, use_cpp=True)
-    return to_json(ast, **kwargs)
+def file_to_json(filename: str, **kwargs: object) -> str:
+    """Load C file into json string representation of ast."""
+
+    tree = parse_file(filename, use_cpp=True)
+    return to_json(tree, **kwargs)
 
 
-def _parse_coord(coord_str):
-    """ Parse coord string (file:line[:column]) into Coord object. """
+def _parse_coord(coord_str: Optional[str]) -> Optional[Coord]:
+    """Parse coord string (file:line[:column]) into Coord object."""
+
     if coord_str is None:
         return None
 
-    vals = coord_str.split(':')
-    vals.extend([None] * 3)
+    vals = coord_str.split(":")
+    vals.extend([None] * (3 - len(vals)))
     filename, line, column = vals[:3]
-    return Coord(filename, line, column)
+    return Coord(int(line), int(column), filename=filename)
 
 
-def _convert_to_obj(value):
+def _convert_to_obj(value: object):
+    """Convert an object in the dict representation into an object.
+
+    Notes
+    -----
+    Mutually recursive with from_dict.
     """
-    Convert an object in the dict representation into an object.
-    Note: Mutually recursive with from_dict.
 
-    """
-    value_type = type(value)
-    if value_type == dict:
+    if isinstance(value, dict):
         return from_dict(value)
-    elif value_type == list:
+    elif isinstance(value, list):
         return [_convert_to_obj(item) for item in value]
     else:
         # String
         return value
 
 
-def from_dict(node_dict):
-    """ Recursively build an ast from dict representation """
-    class_name = node_dict.pop('_nodetype')
+def from_dict(node_dict: dict[str, c_ast.AST]) -> Any:
+    """Recursively build an ast from dict representation."""
+
+    class_name = node_dict.pop("_nodetype")
 
     klass = getattr(c_ast, class_name)
 
@@ -174,7 +172,7 @@ def from_dict(node_dict):
     # to node constructors.
     objs = {}
     for key, value in node_dict.items():
-        if key == 'coord':
+        if key == "coord":
             objs[key] = _parse_coord(value)
         else:
             objs[key] = _convert_to_obj(value)
@@ -184,18 +182,27 @@ def from_dict(node_dict):
     return klass(**objs)
 
 
-def from_json(ast_json):
-    """ Build an ast from json string representation """
+def from_json(ast_json: str) -> c_ast.AST:
+    """Build an ast from json string representation."""
+
     return from_dict(json.loads(ast_json))
 
 
-#------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+def main() -> None:
+    import argparse
+
+    argparser = argparse.ArgumentParser()
+    argparser.add_argument("filename")
+    filename: str = argparser.parse_args().filename
+
+    # Some test code...
+    # Do trip from C -> ast -> dict -> ast -> json, then print.
+    tree = parse_file(filename, use_cpp=True)
+    ast_dict = file_to_dict(filename)
+    ast = from_dict(ast_dict)
+    print(to_json(ast, sort_keys=True, indent=4))
+
+
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        # Some test code...
-        # Do trip from C -> ast -> dict -> ast -> json, then print.
-        ast_dict = file_to_dict(sys.argv[1])
-        ast = from_dict(ast_dict)
-        print(to_json(ast, sort_keys=True, indent=4))
-    else:
-        print("Please provide a filename as argument")
+    raise SystemExit(main())

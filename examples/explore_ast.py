@@ -1,4 +1,4 @@
-#-----------------------------------------------------------------
+# -----------------------------------------------------------------
 # pycparser: explore_ast.py
 #
 # This example demonstrates how to "explore" the AST created by
@@ -11,15 +11,9 @@
 #
 # Eli Bendersky [https://eli.thegreenplace.net/]
 # License: BSD
-#-----------------------------------------------------------------
-import sys
+# -----------------------------------------------------------------
+from cparsing import c_ast, parse
 
-# This is not required if you've installed pycparser into
-# your site-packages/ with setup.py
-#
-sys.path.extend(['.', '..'])
-
-from pycparser import c_parser
 
 # This is some C source to parse. Note that pycparser must begin
 # at the top level of the C file, i.e. with either declarations
@@ -58,15 +52,15 @@ text = r"""
 # Create the parser and ask to parse the text. parse() will throw
 # a ParseError if there's an error in the code
 #
-parser = c_parser.CParser()
-ast = parser.parse(text, filename='<none>')
+tree = parse(text, filename="<none>")
+assert tree
 
 # Uncomment the following line to see the AST in a nice, human
 # readable way. show() is the most useful tool in exploring ASTs
 # created by pycparser. See the c_ast.py file for the options you
 # can pass it.
 
-#ast.show(showcoord=True)
+print(c_ast.dump(tree, indent=4, include_coords=True))
 
 # OK, we've seen that the top node is FileAST. This is always the
 # top node of the AST. Its children are "external declarations",
@@ -79,48 +73,55 @@ ast = parser.parse(text, filename='<none>')
 # definition is the third child, it's ext[2]. Uncomment the
 # following line to show it:
 
-#ast.ext[2].show()
+print(c_ast.dump(tree.ext[2], indent=4))
+assert isinstance(tree.ext[2], c_ast.FuncDef)
 
 # A FuncDef consists of a declaration, a list of parameter
 # declarations (for K&R style function definitions), and a body.
 # First, let's examine the declaration.
 
-function_decl = ast.ext[2].decl
+function_decl = tree.ext[2].decl
+assert isinstance(function_decl, c_ast.Decl)
 
 # function_decl, like any other declaration, is a Decl. Its type child
 # is a FuncDecl, which has a return type and arguments stored in a
 # ParamList node
 
-#function_decl.type.show()
-#function_decl.type.args.show()
+print(c_ast.dump(function_decl.type, indent=4))
+assert isinstance(function_decl.type, c_ast.FuncDecl)
+assert function_decl.type.args is not None
+
+print(c_ast.dump(function_decl.type.args, indent=4))
 
 # The following displays the name and type of each argument:
 
-#for param_decl in function_decl.type.args.params:
-    #print('Arg name: %s' % param_decl.name)
-    #print('Type:')
-    #param_decl.type.show(offset=6)
+for param_decl in function_decl.type.args.params:
+    print(f"Arg name: {param_decl.name}")
+    print("Type:")
+    print(c_ast.dump(param_decl.type))
 
 # The body is of FuncDef is a Compound, which is a placeholder for a block
 # surrounded by {} (You should be reading _c_ast.cfg parallel to this
 # explanation and seeing these things with your own eyes).
 # Let's see the block's declarations:
 
-function_body = ast.ext[2].body
+function_body = tree.ext[2].body
 
 # The following displays the declarations and statements in the function
 # body
 
-#for decl in function_body.block_items:
-    #decl.show()
+# for decl in function_body.block_items:
+#     decl.show()
 
 # We can see a single variable declaration, i, declared to be a simple type
 # declaration of type 'unsigned int', followed by statements.
 
 # block_items is a list, so the third element is the For statement:
 
+assert function_body.block_items is not None
 for_stmt = function_body.block_items[2]
-#for_stmt.show()
+assert isinstance(for_stmt, c_ast.For)
+print(c_ast.dump(for_stmt))
 
 # As you can see in _c_ast.cfg, For's children are 'init, cond,
 # next' for the respective parts of the 'for' loop specifier,
@@ -129,23 +130,27 @@ for_stmt = function_body.block_items[2]
 #
 # Let's dig deeper, to the while statement inside the for loop:
 
+assert isinstance(for_stmt.stmt, c_ast.Compound)
+assert for_stmt.stmt.block_items is not None
 while_stmt = for_stmt.stmt.block_items[1]
-#while_stmt.show()
+assert isinstance(while_stmt, c_ast.While)
+print(c_ast.dump(while_stmt))
 
 # While is simpler, it only has a condition node and a stmt node.
 # The condition:
 
 while_cond = while_stmt.cond
-#while_cond.show()
+print(c_ast.dump(while_cond))
 
 # Note that it's a BinaryOp node - the basic constituent of
 # expressions in our AST. BinaryOp is the expression tree, with
 # left and right nodes as children. It also has the op attribute,
 # which is just the string representation of the operator.
 
-#print(while_cond.op)
-#while_cond.left.show()
-#while_cond.right.show()
+assert isinstance(while_cond, c_ast.BinaryOp)
+print(while_cond.op)
+print(c_ast.dump(while_cond.left))
+print(c_ast.dump(while_cond.right))
 
 
 # That's it for the example. I hope you now see how easy it is to explore the

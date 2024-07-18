@@ -1,9 +1,11 @@
+# ruff: noqa: F403, F405
 """Test fundamentals of the parser."""
 
-from typing import Union
+from typing import Union as TUnion
 
 import pytest
-from cparsing import CParsingError, c_ast, parse
+from cparsing import CParsingError, parse
+from cparsing.c_ast import *
 from cparsing.utils import Coord
 
 
@@ -16,28 +18,28 @@ from cparsing.utils import Coord
 )
 def test_ast_File(test_input: str, expected_length: int):
     tree = parse(test_input)
-    assert isinstance(tree, c_ast.File)
+    assert isinstance(tree, File)
     assert len(tree.ext) == expected_length
 
 
 @pytest.mark.parametrize("test_input", ["int foo;;"])
 def test_empty_toplevel_decl(test_input: str):
     tree = parse(test_input)
-    assert isinstance(tree, c_ast.File)
+    assert isinstance(tree, File)
     assert len(tree.ext) == 1
 
-    expected_decl = c_ast.Decl("foo", c_ast.TypeDecl("foo", type=c_ast.IdType(["int"])))
+    expected_decl = Decl("foo", TypeDecl("foo", type=IdType(["int"])))
     assert tree.ext[0] == expected_decl
 
 
 @pytest.mark.parametrize(
     ("test_input", "expected"),
     [
-        (";", c_ast.File([])),
-        (";int foo;", c_ast.File([c_ast.Decl("foo", c_ast.TypeDecl("foo", type=c_ast.IdType(["int"])))])),
+        (";", File([])),
+        (";int foo;", File([Decl("foo", TypeDecl("foo", type=IdType(["int"])))])),
     ],
 )
-def test_initial_semi(test_input: str, expected: c_ast.AST):
+def test_initial_semi(test_input: str, expected: AST):
     tree = parse(test_input)
     assert tree == expected
 
@@ -45,112 +47,67 @@ def test_initial_semi(test_input: str, expected: c_ast.AST):
 @pytest.mark.parametrize(
     ("test_input", "expected"),
     [
-        (
-            "int a;",
-            c_ast.Decl("a", c_ast.TypeDecl("a", type=c_ast.IdType(["int"]))),
-        ),
-        (
-            "unsigned int a;",
-            c_ast.Decl("a", c_ast.TypeDecl("a", type=c_ast.IdType(["unsigned", "int"]))),
-        ),
-        (
-            "_Bool a;",
-            c_ast.Decl("a", c_ast.TypeDecl("a", type=c_ast.IdType(["_Bool"]))),
-        ),
-        (
-            "float _Complex fcc;",
-            c_ast.Decl("fcc", c_ast.TypeDecl("fcc", type=c_ast.IdType(["float", "_Complex"]))),
-        ),
-        (
-            "char* string;",
-            c_ast.Decl("string", c_ast.PtrDecl([], type=c_ast.TypeDecl("string", type=c_ast.IdType(["char"])))),
-        ),
+        ("int a;", Decl("a", TypeDecl("a", type=IdType(["int"])))),
+        ("unsigned int a;", Decl("a", TypeDecl("a", type=IdType(["unsigned", "int"])))),
+        ("_Bool a;", Decl("a", TypeDecl("a", type=IdType(["_Bool"])))),
+        ("float _Complex fcc;", Decl("fcc", TypeDecl("fcc", type=IdType(["float", "_Complex"])))),
+        ("char* string;", Decl("string", PtrDecl([], type=TypeDecl("string", type=IdType(["char"]))))),
         (
             "long ar[15];",
-            c_ast.Decl(
-                "ar",
-                c_ast.ArrayDecl(
-                    type=c_ast.TypeDecl("ar", type=c_ast.IdType(["long"])),
-                    dim=c_ast.Constant("int", "15"),
-                    dim_quals=[],
-                ),
-            ),
+            Decl("ar", ArrayDecl(type=TypeDecl("ar", type=IdType(["long"])), dim=Constant("int", "15"), dim_quals=[])),
         ),
         (
             "long long ar[15];",
-            c_ast.Decl(
+            Decl(
                 "ar",
-                c_ast.ArrayDecl(
-                    type=c_ast.TypeDecl("ar", type=c_ast.IdType(["long", "long"])),
-                    dim=c_ast.Constant(type="int", value="15"),
+                ArrayDecl(
+                    type=TypeDecl("ar", type=IdType(["long", "long"])),
+                    dim=Constant(type="int", value="15"),
                     dim_quals=[],
                 ),
             ),
         ),
         (
             "unsigned ar[];",
-            c_ast.Decl(
-                "ar",
-                c_ast.ArrayDecl(
-                    type=c_ast.TypeDecl("ar", type=c_ast.IdType(["unsigned"])),
-                    dim=None,
-                    dim_quals=[],
-                ),
-            ),
+            Decl("ar", ArrayDecl(type=TypeDecl("ar", type=IdType(["unsigned"])), dim=None, dim_quals=[])),
         ),
         (
             "int strlen(char* s);",
-            c_ast.Decl(
+            Decl(
                 "strlen",
-                c_ast.FuncDecl(
-                    args=c_ast.ParamList(
-                        [
-                            c_ast.Decl(
-                                "s",
-                                c_ast.PtrDecl(quals=[], type=c_ast.TypeDecl("s", type=c_ast.IdType(["char"]))),
-                            )
-                        ]
-                    ),
-                    type=c_ast.TypeDecl("strlen", type=c_ast.IdType(["int"])),
+                FuncDecl(
+                    args=ParamList([Decl("s", PtrDecl(quals=[], type=TypeDecl("s", type=IdType(["char"]))))]),
+                    type=TypeDecl("strlen", type=IdType(["int"])),
                 ),
             ),
         ),
         (
             "int strcmp(char* s1, char* s2);",
-            c_ast.Decl(
+            Decl(
                 "strcmp",
-                c_ast.FuncDecl(
-                    args=c_ast.ParamList(
+                FuncDecl(
+                    args=ParamList(
                         [
-                            c_ast.Decl(
-                                "s1",
-                                c_ast.PtrDecl(quals=[], type=c_ast.TypeDecl("s1", type=c_ast.IdType(["char"]))),
-                            ),
-                            c_ast.Decl(
-                                "s2",
-                                c_ast.PtrDecl(quals=[], type=c_ast.TypeDecl("s2", type=c_ast.IdType(["char"]))),
-                            ),
+                            Decl("s1", PtrDecl(quals=[], type=TypeDecl("s1", type=IdType(["char"])))),
+                            Decl("s2", PtrDecl(quals=[], type=TypeDecl("s2", type=IdType(["char"])))),
                         ]
                     ),
-                    type=c_ast.TypeDecl("strcmp", type=c_ast.IdType(["int"])),
+                    type=TypeDecl("strcmp", type=IdType(["int"])),
                 ),
             ),
         ),
         pytest.param(
             "extern foobar(foo, bar);",
-            c_ast.Decl(
+            Decl(
                 "foobar",
-                c_ast.FuncDecl(
-                    args=c_ast.ParamList([c_ast.Id("foo"), c_ast.Id("bar")]),
-                    type=c_ast.TypeDecl("foobar", type=c_ast.IdType(["int"])),
-                ),
+                FuncDecl(args=ParamList([Id("foo"), Id("bar")]), type=TypeDecl("foobar", type=IdType(["int"]))),
                 storage=["extern"],
             ),
             id="function return values and parameters may not have type information",
         ),
         pytest.param(
             "__int128 a;",
-            c_ast.Decl("a", c_ast.TypeDecl("a", type=c_ast.IdType(["__int128"]))),
+            Decl("a", TypeDecl("a", type=IdType(["__int128"]))),
             id=(
                 "__int128: it isn't part of the core C99 or C11 standards, but is mentioned in both documents "
                 "under 'Common Extensions'."
@@ -158,7 +115,7 @@ def test_initial_semi(test_input: str, expected: c_ast.AST):
         ),
     ],
 )
-def test_simple_decls(test_input: str, expected: c_ast.AST):
+def test_simple_decls(test_input: str, expected: AST):
     tree = parse(test_input)
     decl = tree.ext[0]
     assert decl == expected
@@ -169,27 +126,21 @@ def test_simple_decls(test_input: str, expected: c_ast.AST):
     [
         (
             "char** ar2D;",
-            c_ast.Decl(
-                "ar2D",
-                c_ast.PtrDecl(
-                    quals=[],
-                    type=c_ast.PtrDecl(quals=[], type=c_ast.TypeDecl("ar2D", type=c_ast.IdType(["char"]))),
-                ),
-            ),
+            Decl("ar2D", PtrDecl(quals=[], type=PtrDecl(quals=[], type=TypeDecl("ar2D", type=IdType(["char"]))))),
         ),
         (
             "int (*a)[1][2];",
-            c_ast.Decl(
+            Decl(
                 "a",
-                c_ast.PtrDecl(
+                PtrDecl(
                     quals=[],
-                    type=c_ast.ArrayDecl(
-                        type=c_ast.ArrayDecl(
-                            type=c_ast.TypeDecl("a", type=c_ast.IdType(["int"])),
-                            dim=c_ast.Constant("int", "2"),
+                    type=ArrayDecl(
+                        type=ArrayDecl(
+                            type=TypeDecl("a", type=IdType(["int"])),
+                            dim=Constant("int", "2"),
                             dim_quals=[],
                         ),
-                        dim=c_ast.Constant("int", "1"),
+                        dim=Constant("int", "1"),
                         dim_quals=[],
                     ),
                 ),
@@ -197,83 +148,68 @@ def test_simple_decls(test_input: str, expected: c_ast.AST):
         ),
         (
             "int *a[1][2];",
-            c_ast.Decl(
+            Decl(
                 "a",
-                c_ast.ArrayDecl(
-                    type=c_ast.ArrayDecl(
-                        type=c_ast.PtrDecl(quals=[], type=c_ast.TypeDecl("a", type=c_ast.IdType(["int"]))),
-                        dim=c_ast.Constant("int", "2"),
+                ArrayDecl(
+                    type=ArrayDecl(
+                        type=PtrDecl(quals=[], type=TypeDecl("a", type=IdType(["int"]))),
+                        dim=Constant("int", "2"),
                         dim_quals=[],
                     ),
-                    dim=c_ast.Constant("int", "1"),
+                    dim=Constant("int", "1"),
                     dim_quals=[],
                 ),
             ),
         ),
         (
             "char* const* p;",
-            c_ast.Decl(
-                "p",
-                c_ast.PtrDecl(
-                    quals=[],
-                    type=c_ast.PtrDecl(quals=["const"], type=c_ast.TypeDecl("p", type=c_ast.IdType(["char"]))),
-                ),
-            ),
+            Decl("p", PtrDecl(quals=[], type=PtrDecl(quals=["const"], type=TypeDecl("p", type=IdType(["char"]))))),
         ),
         (
             "const char* const* p;",
-            c_ast.Decl(
+            Decl(
                 "p",
-                c_ast.PtrDecl(
+                PtrDecl(
                     quals=[],
-                    type=c_ast.PtrDecl(
-                        quals=["const"],
-                        type=c_ast.TypeDecl("p", quals=["const"], type=c_ast.IdType(["char"])),
-                    ),
+                    type=PtrDecl(quals=["const"], type=TypeDecl("p", quals=["const"], type=IdType(["char"]))),
                 ),
                 quals=["const"],
             ),
         ),
         (
             "char* * const p;",
-            c_ast.Decl(
+            Decl(
                 "p",
-                c_ast.PtrDecl(
-                    quals=["const"],
-                    type=c_ast.PtrDecl(quals=[], type=c_ast.TypeDecl("p", type=c_ast.IdType(["char"]))),
-                ),
+                PtrDecl(quals=["const"], type=PtrDecl(quals=[], type=TypeDecl("p", type=IdType(["char"])))),
             ),
         ),
         (
             "char ***ar3D[40];",
-            c_ast.Decl(
+            Decl(
                 "ar3D",
-                c_ast.ArrayDecl(
-                    type=c_ast.PtrDecl(
+                ArrayDecl(
+                    type=PtrDecl(
                         quals=[],
-                        type=c_ast.PtrDecl(
-                            quals=[],
-                            type=c_ast.PtrDecl(quals=[], type=c_ast.TypeDecl("ar3D", type=c_ast.IdType(["char"]))),
-                        ),
+                        type=PtrDecl(quals=[], type=PtrDecl(quals=[], type=TypeDecl("ar3D", type=IdType(["char"])))),
                     ),
-                    dim=c_ast.Constant("int", "40"),
+                    dim=Constant("int", "40"),
                     dim_quals=[],
                 ),
             ),
         ),
         (
             "char (***ar3D)[40];",
-            c_ast.Decl(
+            Decl(
                 "ar3D",
-                c_ast.PtrDecl(
+                PtrDecl(
                     quals=[],
-                    type=c_ast.PtrDecl(
+                    type=PtrDecl(
                         quals=[],
-                        type=c_ast.PtrDecl(
+                        type=PtrDecl(
                             quals=[],
-                            type=c_ast.ArrayDecl(
-                                type=c_ast.TypeDecl("ar3D", type=c_ast.IdType(["char"])),
-                                dim=c_ast.Constant("int", "40"),
+                            type=ArrayDecl(
+                                type=TypeDecl("ar3D", type=IdType(["char"])),
+                                dim=Constant("int", "40"),
                                 dim_quals=[],
                             ),
                         ),
@@ -283,30 +219,20 @@ def test_simple_decls(test_input: str, expected: c_ast.AST):
         ),
         (
             "int (*const*const x)(char, int);",
-            c_ast.Decl(
+            Decl(
                 "x",
-                c_ast.PtrDecl(
+                PtrDecl(
                     quals=["const"],
-                    type=c_ast.PtrDecl(
+                    type=PtrDecl(
                         quals=["const"],
-                        type=c_ast.FuncDecl(
-                            args=c_ast.ParamList(
+                        type=FuncDecl(
+                            args=ParamList(
                                 [
-                                    c_ast.Typename(
-                                        None,
-                                        quals=[],
-                                        align=None,
-                                        type=c_ast.TypeDecl(type=c_ast.IdType(["char"])),
-                                    ),
-                                    c_ast.Typename(
-                                        None,
-                                        quals=[],
-                                        align=None,
-                                        type=c_ast.TypeDecl(type=c_ast.IdType(["int"])),
-                                    ),
+                                    Typename(None, quals=[], align=None, type=TypeDecl(type=IdType(["char"]))),
+                                    Typename(None, quals=[], align=None, type=TypeDecl(type=IdType(["int"]))),
                                 ]
                             ),
-                            type=c_ast.TypeDecl("x", type=c_ast.IdType(["int"])),
+                            type=TypeDecl("x", type=IdType(["int"])),
                         ),
                     ),
                 ),
@@ -314,55 +240,42 @@ def test_simple_decls(test_input: str, expected: c_ast.AST):
         ),
         (
             "int (*x[4])(char, int);",
-            c_ast.Decl(
+            Decl(
                 "x",
-                c_ast.ArrayDecl(
-                    type=c_ast.PtrDecl(
+                ArrayDecl(
+                    type=PtrDecl(
                         quals=[],
-                        type=c_ast.FuncDecl(
-                            args=c_ast.ParamList(
+                        type=FuncDecl(
+                            args=ParamList(
                                 [
-                                    c_ast.Typename(
-                                        None,
-                                        quals=[],
-                                        align=None,
-                                        type=c_ast.TypeDecl(type=c_ast.IdType(["char"])),
-                                    ),
-                                    c_ast.Typename(
-                                        None,
-                                        quals=[],
-                                        align=None,
-                                        type=c_ast.TypeDecl(type=c_ast.IdType(["int"])),
-                                    ),
+                                    Typename(None, quals=[], align=None, type=TypeDecl(type=IdType(["char"]))),
+                                    Typename(None, quals=[], align=None, type=TypeDecl(type=IdType(["int"]))),
                                 ]
                             ),
-                            type=c_ast.TypeDecl("x", type=c_ast.IdType(["int"])),
+                            type=TypeDecl("x", type=IdType(["int"])),
                         ),
                     ),
-                    dim=c_ast.Constant("int", "4"),
+                    dim=Constant("int", "4"),
                     dim_quals=[],
                 ),
             ),
         ),
         (
             "char *(*(**foo [][8])())[];",
-            c_ast.Decl(
+            Decl(
                 "foo",
-                c_ast.ArrayDecl(
-                    type=c_ast.ArrayDecl(
-                        type=c_ast.PtrDecl(
+                ArrayDecl(
+                    type=ArrayDecl(
+                        type=PtrDecl(
                             quals=[],
-                            type=c_ast.PtrDecl(
+                            type=PtrDecl(
                                 quals=[],
-                                type=c_ast.FuncDecl(
+                                type=FuncDecl(
                                     args=None,
-                                    type=c_ast.PtrDecl(
+                                    type=PtrDecl(
                                         quals=[],
-                                        type=c_ast.ArrayDecl(
-                                            type=c_ast.PtrDecl(
-                                                quals=[],
-                                                type=c_ast.TypeDecl("foo", type=c_ast.IdType(["char"])),
-                                            ),
+                                        type=ArrayDecl(
+                                            type=PtrDecl(quals=[], type=TypeDecl("foo", type=IdType(["char"]))),
                                             dim=None,
                                             dim_quals=[],
                                         ),
@@ -370,7 +283,7 @@ def test_simple_decls(test_input: str, expected: c_ast.AST):
                                 ),
                             ),
                         ),
-                        dim=c_ast.Constant("int", "8"),
+                        dim=Constant("int", "8"),
                         dim_quals=[],
                     ),
                     dim=None,
@@ -380,22 +293,13 @@ def test_simple_decls(test_input: str, expected: c_ast.AST):
         ),
         pytest.param(
             "int (*k)(int);",
-            c_ast.Decl(
+            Decl(
                 "k",
-                c_ast.PtrDecl(
+                PtrDecl(
                     quals=[],
-                    type=c_ast.FuncDecl(
-                        args=c_ast.ParamList(
-                            [
-                                c_ast.Typename(
-                                    None,
-                                    quals=[],
-                                    align=None,
-                                    type=c_ast.TypeDecl(type=c_ast.IdType(["int"])),
-                                )
-                            ]
-                        ),
-                        type=c_ast.TypeDecl("k", type=c_ast.IdType(["int"])),
+                    type=FuncDecl(
+                        args=ParamList([Typename(None, quals=[], align=None, type=TypeDecl(type=IdType(["int"])))]),
+                        type=TypeDecl("k", type=IdType(["int"])),
                     ),
                 ),
             ),
@@ -403,22 +307,22 @@ def test_simple_decls(test_input: str, expected: c_ast.AST):
         ),
         pytest.param(
             "int (*k)(const int);",
-            c_ast.Decl(
+            Decl(
                 "k",
-                c_ast.PtrDecl(
+                PtrDecl(
                     quals=[],
-                    type=c_ast.FuncDecl(
-                        args=c_ast.ParamList(
+                    type=FuncDecl(
+                        args=ParamList(
                             [
-                                c_ast.Typename(
+                                Typename(
                                     None,
                                     quals=["const"],
                                     align=None,
-                                    type=c_ast.TypeDecl(quals=["const"], type=c_ast.IdType(["int"])),
+                                    type=TypeDecl(quals=["const"], type=IdType(["int"])),
                                 )
                             ]
                         ),
-                        type=c_ast.TypeDecl("k", type=c_ast.IdType(["int"])),
+                        type=TypeDecl("k", type=IdType(["int"])),
                     ),
                 ),
             ),
@@ -426,13 +330,13 @@ def test_simple_decls(test_input: str, expected: c_ast.AST):
         ),
         pytest.param(
             "int (*k)(int q);",
-            c_ast.Decl(
+            Decl(
                 "k",
-                c_ast.PtrDecl(
+                PtrDecl(
                     quals=[],
-                    type=c_ast.FuncDecl(
-                        args=c_ast.ParamList([c_ast.Decl("q", c_ast.TypeDecl("q", type=c_ast.IdType(["int"])))]),
-                        type=c_ast.TypeDecl("k", type=c_ast.IdType(["int"])),
+                    type=FuncDecl(
+                        args=ParamList([Decl("q", TypeDecl("q", type=IdType(["int"])))]),
+                        type=TypeDecl("k", type=IdType(["int"])),
                     ),
                 ),
             ),
@@ -440,21 +344,21 @@ def test_simple_decls(test_input: str, expected: c_ast.AST):
         ),
         pytest.param(
             "int (*k)(const volatile int q);",
-            c_ast.Decl(
+            Decl(
                 "k",
-                c_ast.PtrDecl(
+                PtrDecl(
                     quals=[],
-                    type=c_ast.FuncDecl(
-                        args=c_ast.ParamList(
+                    type=FuncDecl(
+                        args=ParamList(
                             [
-                                c_ast.Decl(
+                                Decl(
                                     "q",
-                                    c_ast.TypeDecl("q", ["const", "volatile"], type=c_ast.IdType(["int"])),
+                                    TypeDecl("q", ["const", "volatile"], type=IdType(["int"])),
                                     quals=["const", "volatile"],
                                 )
                             ]
                         ),
-                        type=c_ast.TypeDecl("k", [], type=c_ast.IdType(["int"])),
+                        type=TypeDecl("k", [], type=IdType(["int"])),
                     ),
                 ),
             ),
@@ -462,21 +366,21 @@ def test_simple_decls(test_input: str, expected: c_ast.AST):
         ),
         pytest.param(
             "int (*k)(_Atomic volatile int q);",
-            c_ast.Decl(
+            Decl(
                 "k",
-                c_ast.PtrDecl(
+                PtrDecl(
                     quals=[],
-                    type=c_ast.FuncDecl(
-                        args=c_ast.ParamList(
+                    type=FuncDecl(
+                        args=ParamList(
                             [
-                                c_ast.Decl(
+                                Decl(
                                     "q",
-                                    c_ast.TypeDecl("q", ["_Atomic", "volatile"], type=c_ast.IdType(["int"])),
+                                    TypeDecl("q", ["_Atomic", "volatile"], type=IdType(["int"])),
                                     quals=["_Atomic", "volatile"],
                                 )
                             ]
                         ),
-                        type=c_ast.TypeDecl("k", type=c_ast.IdType(["int"])),
+                        type=TypeDecl("k", type=IdType(["int"])),
                     ),
                 ),
             ),
@@ -484,24 +388,21 @@ def test_simple_decls(test_input: str, expected: c_ast.AST):
         ),
         pytest.param(
             "int (*k)(const volatile int* q);",
-            c_ast.Decl(
+            Decl(
                 "k",
-                c_ast.PtrDecl(
+                PtrDecl(
                     quals=[],
-                    type=c_ast.FuncDecl(
-                        args=c_ast.ParamList(
+                    type=FuncDecl(
+                        args=ParamList(
                             [
-                                c_ast.Decl(
+                                Decl(
                                     "q",
-                                    c_ast.PtrDecl(
-                                        quals=[],
-                                        type=c_ast.TypeDecl("q", ["const", "volatile"], type=c_ast.IdType(["int"])),
-                                    ),
+                                    PtrDecl(quals=[], type=TypeDecl("q", ["const", "volatile"], type=IdType(["int"]))),
                                     quals=["const", "volatile"],
                                 )
                             ]
                         ),
-                        type=c_ast.TypeDecl("k", type=c_ast.IdType(["int"])),
+                        type=TypeDecl("k", type=IdType(["int"])),
                     ),
                 ),
             ),
@@ -509,24 +410,21 @@ def test_simple_decls(test_input: str, expected: c_ast.AST):
         ),
         pytest.param(
             "int (*k)(restrict int* q);",
-            c_ast.Decl(
+            Decl(
                 "k",
-                c_ast.PtrDecl(
+                PtrDecl(
                     quals=[],
-                    type=c_ast.FuncDecl(
-                        args=c_ast.ParamList(
+                    type=FuncDecl(
+                        args=ParamList(
                             [
-                                c_ast.Decl(
+                                Decl(
                                     "q",
-                                    c_ast.PtrDecl(
-                                        quals=[],
-                                        type=c_ast.TypeDecl("q", ["restrict"], type=c_ast.IdType(["int"])),
-                                    ),
+                                    PtrDecl(quals=[], type=TypeDecl("q", ["restrict"], type=IdType(["int"]))),
                                     quals=["restrict"],
                                 )
                             ]
                         ),
-                        type=c_ast.TypeDecl("k", type=c_ast.IdType(["int"])),
+                        type=TypeDecl("k", type=IdType(["int"])),
                     ),
                 ),
             ),
@@ -534,7 +432,7 @@ def test_simple_decls(test_input: str, expected: c_ast.AST):
         ),
     ],
 )
-def test_nested_decls(test_input: str, expected: c_ast.AST):
+def test_nested_decls(test_input: str, expected: AST):
     tree = parse(test_input)
     decl = tree.ext[0]
     assert decl == expected
@@ -545,61 +443,61 @@ def test_nested_decls(test_input: str, expected: c_ast.AST):
     [
         pytest.param(
             "int zz(int p[static 10]);",
-            c_ast.Decl(
+            Decl(
                 "zz",
-                c_ast.FuncDecl(
-                    args=c_ast.ParamList(
+                FuncDecl(
+                    args=ParamList(
                         [
-                            c_ast.Decl(
+                            Decl(
                                 "p",
-                                c_ast.ArrayDecl(
-                                    type=c_ast.TypeDecl("p", type=c_ast.IdType(["int"])),
-                                    dim=c_ast.Constant("int", "10"),
+                                ArrayDecl(
+                                    type=TypeDecl("p", type=IdType(["int"])),
+                                    dim=Constant("int", "10"),
                                     dim_quals=["static"],
                                 ),
                             )
                         ]
                     ),
-                    type=c_ast.TypeDecl("zz", type=c_ast.IdType(["int"])),
+                    type=TypeDecl("zz", type=IdType(["int"])),
                 ),
             ),
             id="named function parameter 1",
         ),
         pytest.param(
             "int zz(int p[const 10]);",
-            c_ast.Decl(
+            Decl(
                 "zz",
-                c_ast.FuncDecl(
-                    args=c_ast.ParamList(
+                FuncDecl(
+                    args=ParamList(
                         [
-                            c_ast.Decl(
+                            Decl(
                                 "p",
-                                c_ast.ArrayDecl(
-                                    type=c_ast.TypeDecl("p", type=c_ast.IdType(["int"])),
-                                    dim=c_ast.Constant("int", "10"),
+                                ArrayDecl(
+                                    type=TypeDecl("p", type=IdType(["int"])),
+                                    dim=Constant("int", "10"),
                                     dim_quals=["const"],
                                 ),
                             )
                         ]
                     ),
-                    type=c_ast.TypeDecl("zz", type=c_ast.IdType(["int"])),
+                    type=TypeDecl("zz", type=IdType(["int"])),
                 ),
             ),
             id="named function parameter 2",
         ),
         pytest.param(
             "int zz(int p[restrict][5]);",
-            c_ast.Decl(
+            Decl(
                 "zz",
-                c_ast.FuncDecl(
-                    args=c_ast.ParamList(
+                FuncDecl(
+                    args=ParamList(
                         [
-                            c_ast.Decl(
+                            Decl(
                                 "p",
-                                c_ast.ArrayDecl(
-                                    type=c_ast.ArrayDecl(
-                                        type=c_ast.TypeDecl("p", type=c_ast.IdType(["int"])),
-                                        dim=c_ast.Constant("int", "5"),
+                                ArrayDecl(
+                                    type=ArrayDecl(
+                                        type=TypeDecl("p", type=IdType(["int"])),
+                                        dim=Constant("int", "5"),
                                         dim_quals=[],
                                     ),
                                     dim=None,
@@ -608,76 +506,76 @@ def test_nested_decls(test_input: str, expected: c_ast.AST):
                             )
                         ]
                     ),
-                    type=c_ast.TypeDecl("zz", type=c_ast.IdType(["int"])),
+                    type=TypeDecl("zz", type=IdType(["int"])),
                 ),
             ),
             id="named function parameter 3",
         ),
         pytest.param(
             "int zz(int p[const restrict static 10][5]);",
-            c_ast.Decl(
+            Decl(
                 "zz",
-                c_ast.FuncDecl(
-                    args=c_ast.ParamList(
+                FuncDecl(
+                    args=ParamList(
                         [
-                            c_ast.Decl(
+                            Decl(
                                 "p",
-                                c_ast.ArrayDecl(
-                                    type=c_ast.ArrayDecl(
-                                        type=c_ast.TypeDecl("p", type=c_ast.IdType(["int"])),
-                                        dim=c_ast.Constant("int", "5"),
+                                ArrayDecl(
+                                    type=ArrayDecl(
+                                        type=TypeDecl("p", type=IdType(["int"])),
+                                        dim=Constant("int", "5"),
                                         dim_quals=[],
                                     ),
-                                    dim=c_ast.Constant("int", "10"),
+                                    dim=Constant("int", "10"),
                                     dim_quals=["const", "restrict", "static"],
                                 ),
                             )
                         ]
                     ),
-                    type=c_ast.TypeDecl("zz", type=c_ast.IdType(["int"])),
+                    type=TypeDecl("zz", type=IdType(["int"])),
                 ),
             ),
             id="named function parameter 4",
         ),
         pytest.param(
             "int zz(int [const 10]);",
-            c_ast.Decl(
+            Decl(
                 "zz",
-                c_ast.FuncDecl(
-                    args=c_ast.ParamList(
+                FuncDecl(
+                    args=ParamList(
                         [
-                            c_ast.Typename(
+                            Typename(
                                 None,
                                 quals=[],
                                 align=None,
-                                type=c_ast.ArrayDecl(
-                                    type=c_ast.TypeDecl(type=c_ast.IdType(["int"])),
-                                    dim=c_ast.Constant("int", "10"),
+                                type=ArrayDecl(
+                                    type=TypeDecl(type=IdType(["int"])),
+                                    dim=Constant("int", "10"),
                                     dim_quals=["const"],
                                 ),
                             )
                         ]
                     ),
-                    type=c_ast.TypeDecl("zz", type=c_ast.IdType(["int"])),
+                    type=TypeDecl("zz", type=IdType(["int"])),
                 ),
             ),
             id="unnamed function parameter 1",
         ),
         pytest.param(
             "int zz(int [restrict][5]);",
-            c_ast.Decl(
+            Decl(
                 "zz",
-                c_ast.FuncDecl(
-                    args=c_ast.ParamList(
+                FuncDecl(
+                    args=ParamList(
                         [
-                            c_ast.Typename(
+                            Typename(
                                 None,
                                 quals=[],
                                 align=None,
-                                type=c_ast.ArrayDecl(
-                                    type=c_ast.ArrayDecl(
-                                        type=c_ast.TypeDecl(type=c_ast.IdType(["int"])),
-                                        dim=c_ast.Constant("int", "5"),
+                                type=ArrayDecl(
+                                    type=ArrayDecl(
+                                        type=TypeDecl(type=IdType(["int"])),
+                                        dim=Constant("int", "5"),
                                         dim_quals=[],
                                     ),
                                     dim=None,
@@ -686,42 +584,42 @@ def test_nested_decls(test_input: str, expected: c_ast.AST):
                             )
                         ]
                     ),
-                    type=c_ast.TypeDecl("zz", type=c_ast.IdType(["int"])),
+                    type=TypeDecl("zz", type=IdType(["int"])),
                 ),
             ),
             id="unnamed function parameter 2",
         ),
         pytest.param(
             "int zz(int [const restrict volatile 10][5]);",
-            c_ast.Decl(
+            Decl(
                 "zz",
-                c_ast.FuncDecl(
-                    args=c_ast.ParamList(
+                FuncDecl(
+                    args=ParamList(
                         [
-                            c_ast.Typename(
+                            Typename(
                                 None,
                                 quals=[],
                                 align=None,
-                                type=c_ast.ArrayDecl(
-                                    type=c_ast.ArrayDecl(
-                                        type=c_ast.TypeDecl(type=c_ast.IdType(["int"])),
-                                        dim=c_ast.Constant("int", "5"),
+                                type=ArrayDecl(
+                                    type=ArrayDecl(
+                                        type=TypeDecl(type=IdType(["int"])),
+                                        dim=Constant("int", "5"),
                                         dim_quals=[],
                                     ),
-                                    dim=c_ast.Constant("int", "10"),
+                                    dim=Constant("int", "10"),
                                     dim_quals=["const", "restrict", "volatile"],
                                 ),
                             )
                         ]
                     ),
-                    type=c_ast.TypeDecl("zz", type=c_ast.IdType(["int"])),
+                    type=TypeDecl("zz", type=IdType(["int"])),
                 ),
             ),
             id="unnamed function parameter 3",
         ),
     ],
 )
-def test_func_decls_with_array_dim_qualifiers(test_input: str, expected: c_ast.AST):
+def test_func_decls_with_array_dim_qualifiers(test_input: str, expected: AST):
     tree = parse(test_input)
     decl = tree.ext[0]
     assert decl == expected
@@ -749,7 +647,7 @@ def test_qualifiers_storage_specifiers_1(
 ):
     tree = parse(test_input).ext[index]
 
-    assert isinstance(tree, c_ast.Decl)
+    assert isinstance(tree, Decl)
     assert tree.quals == expected_quals
     assert tree.storage == expected_storage
 
@@ -758,10 +656,10 @@ def test_qualifiers_storage_specifiers_2():
     test_input = "static char * const p;"
     tree = parse(test_input)
 
-    assert isinstance(tree.ext[0], c_ast.Decl)
+    assert isinstance(tree.ext[0], Decl)
 
     pdecl = tree.ext[0].type
-    assert isinstance(pdecl, c_ast.PtrDecl)
+    assert isinstance(pdecl, PtrDecl)
     assert pdecl.quals == ["const"]
 
 
@@ -771,22 +669,19 @@ def test_qualifiers_storage_specifiers_2():
         (
             "_Atomic(int) ai;",
             0,
-            c_ast.Decl("ai", c_ast.TypeDecl("ai", ["_Atomic"], type=c_ast.IdType(["int"])), quals=["_Atomic"]),
+            Decl("ai", TypeDecl("ai", ["_Atomic"], type=IdType(["int"])), quals=["_Atomic"]),
         ),
         (
             "_Atomic(int*) ai;",
             0,
-            c_ast.Decl("ai", c_ast.PtrDecl(quals=["_Atomic"], type=c_ast.TypeDecl("ai", type=c_ast.IdType(["int"])))),
+            Decl("ai", PtrDecl(quals=["_Atomic"], type=TypeDecl("ai", type=IdType(["int"])))),
         ),
         (
             "_Atomic(_Atomic(int)*) aai;",
             0,
-            c_ast.Decl(
+            Decl(
                 "aai",
-                c_ast.PtrDecl(
-                    quals=["_Atomic"],
-                    type=c_ast.TypeDecl("aai", ["_Atomic"], type=c_ast.IdType(["int"])),
-                ),
+                PtrDecl(quals=["_Atomic"], type=TypeDecl("aai", ["_Atomic"], type=IdType(["int"]))),
                 quals=["_Atomic"],
             ),
         ),
@@ -794,47 +689,40 @@ def test_qualifiers_storage_specifiers_2():
             "_Atomic(int) foo, bar;",
             slice(0, 2),
             [
-                c_ast.Decl("foo", c_ast.TypeDecl("foo", ["_Atomic"], type=c_ast.IdType(["int"])), quals=["_Atomic"]),
-                c_ast.Decl("bar", c_ast.TypeDecl("foo", ["_Atomic"], type=c_ast.IdType(["int"])), quals=["_Atomic"]),
+                Decl("foo", TypeDecl("foo", ["_Atomic"], type=IdType(["int"])), quals=["_Atomic"]),
+                Decl("bar", TypeDecl("foo", ["_Atomic"], type=IdType(["int"])), quals=["_Atomic"]),
             ],
             id="multiple declarations",
         ),
         pytest.param(
             "typedef _Atomic(int) atomic_int;",
             0,
-            c_ast.Typedef(
+            Typedef(
                 "atomic_int",
                 quals=["_Atomic"],
                 storage=["typedef"],
-                type=c_ast.TypeDecl("atomic_int", ["_Atomic"], type=c_ast.IdType(["int"])),
+                type=TypeDecl("atomic_int", ["_Atomic"], type=IdType(["int"])),
             ),
             id="typedefs with _Atomic specifiers 1",
         ),
         pytest.param(
             "typedef _Atomic(_Atomic(_Atomic(int (*)(void)) *) *) t;",
             0,
-            c_ast.Typedef(
+            Typedef(
                 "t",
                 quals=[],
                 storage=["typedef"],
-                type=c_ast.PtrDecl(
+                type=PtrDecl(
                     quals=["_Atomic"],
-                    type=c_ast.PtrDecl(
+                    type=PtrDecl(
                         quals=["_Atomic"],
-                        type=c_ast.PtrDecl(
+                        type=PtrDecl(
                             quals=["_Atomic"],
-                            type=c_ast.FuncDecl(
-                                args=c_ast.ParamList(
-                                    [
-                                        c_ast.Typename(
-                                            None,
-                                            quals=[],
-                                            align=None,
-                                            type=c_ast.TypeDecl(type=c_ast.IdType(["void"])),
-                                        )
-                                    ]
+                            type=FuncDecl(
+                                args=ParamList(
+                                    [Typename(None, quals=[], align=None, type=TypeDecl(type=IdType(["void"])))]
                                 ),
-                                type=c_ast.TypeDecl("t", type=c_ast.IdType(["int"])),
+                                type=TypeDecl("t", type=IdType(["int"])),
                             ),
                         ),
                     ),
@@ -843,10 +731,10 @@ def test_qualifiers_storage_specifiers_2():
         ),
     ],
 )
-def test_atomic_specifier(test_input: str, index: Union[int, slice], expected: Union[c_ast.AST, list[c_ast.AST]]):
+def test_atomic_specifier(test_input: str, index: TUnion[int, slice], expected: TUnion[AST, list[AST]]):
     tree = parse(test_input)
     decl = tree.ext[index]
-    assert c_ast.compare(decl, expected)
+    assert compare(decl, expected)
 
 
 @pytest.mark.parametrize(
@@ -865,21 +753,15 @@ void foo()
 }
 """,
             (
-                c_ast.UnaryOp(op="sizeof", expr=c_ast.Id("k")),
-                c_ast.UnaryOp(
+                UnaryOp(op="sizeof", expr=Id("k")),
+                UnaryOp(op="sizeof", expr=Typename(None, quals=[], align=None, type=TypeDecl(type=IdType(["int"])))),
+                UnaryOp(
                     op="sizeof",
-                    expr=c_ast.Typename(None, quals=[], align=None, type=c_ast.TypeDecl(type=c_ast.IdType(["int"]))),
-                ),
-                c_ast.UnaryOp(
-                    op="sizeof",
-                    expr=c_ast.Typename(
+                    expr=Typename(
                         None,
                         quals=[],
                         align=None,
-                        type=c_ast.PtrDecl(
-                            quals=[],
-                            type=c_ast.PtrDecl(quals=[], type=c_ast.TypeDecl(type=c_ast.IdType(["int"]))),
-                        ),
+                        type=PtrDecl(quals=[], type=PtrDecl(quals=[], type=TypeDecl(type=IdType(["int"])))),
                     ),
                 ),
             ),
@@ -887,15 +769,15 @@ void foo()
     ],
 )
 @pytest.mark.xfail(reason="TODO")
-def test_sizeof(test_input: str, expected_compound_block_items: tuple[c_ast.AST, ...]) -> None:
+def test_sizeof(test_input: str, expected_compound_block_items: tuple[AST, ...]) -> None:
     tree = parse(test_input)
     compound = tree.ext[0].body  # pyright: ignore
-    assert isinstance(compound, c_ast.Compound)
+    assert isinstance(compound, Compound)
     assert compound.block_items
 
     for index, expected in enumerate(expected_compound_block_items):
         found_init = compound.block_items[index].init  # pyright: ignore
-        assert isinstance(found_init, c_ast.UnaryOp)
+        assert isinstance(found_init, UnaryOp)
         assert found_init == expected
 
 
@@ -904,30 +786,25 @@ def test_sizeof(test_input: str, expected_compound_block_items: tuple[c_ast.AST,
     [
         (
             "int a = _Alignof(int);",
-            c_ast.Decl(
+            Decl(
                 "a",
-                c_ast.TypeDecl("a", type=c_ast.IdType(["int"])),
-                init=c_ast.UnaryOp(
+                TypeDecl("a", type=IdType(["int"])),
+                init=UnaryOp(
                     op="_Alignof",
-                    expr=c_ast.Typename(None, quals=[], align=None, type=c_ast.TypeDecl(type=c_ast.IdType(["int"]))),
+                    expr=Typename(None, quals=[], align=None, type=TypeDecl(type=IdType(["int"]))),
                 ),
             ),
         ),
         (
             "_Alignas(_Alignof(int)) char a;",
-            c_ast.Decl(
+            Decl(
                 "a",
-                c_ast.TypeDecl("a", type=c_ast.IdType(["char"])),
+                TypeDecl("a", type=IdType(["char"])),
                 align=[
-                    c_ast.Alignas(
-                        alignment=c_ast.UnaryOp(
+                    Alignas(
+                        alignment=UnaryOp(
                             op="_Alignof",
-                            expr=c_ast.Typename(
-                                None,
-                                quals=[],
-                                align=None,
-                                type=c_ast.TypeDecl(type=c_ast.IdType(["int"])),
-                            ),
+                            expr=Typename(None, quals=[], align=None, type=TypeDecl(type=IdType(["int"]))),
                         )
                     )
                 ],
@@ -935,32 +812,19 @@ def test_sizeof(test_input: str, expected_compound_block_items: tuple[c_ast.AST,
         ),
         (
             "_Alignas(4) char a;",
-            c_ast.Decl(
-                "a",
-                c_ast.TypeDecl("a", type=c_ast.IdType(["char"])),
-                align=[c_ast.Alignas(c_ast.Constant("int", "4"))],
-            ),
+            Decl("a", TypeDecl("a", type=IdType(["char"])), align=[Alignas(Constant("int", "4"))]),
         ),
         (
             "_Alignas(int) char a;",
-            c_ast.Decl(
+            Decl(
                 "a",
-                c_ast.TypeDecl("a", type=c_ast.IdType(["char"])),
-                align=[
-                    c_ast.Alignas(
-                        c_ast.Typename(
-                            None,
-                            quals=[],
-                            align=None,
-                            type=c_ast.TypeDecl(type=c_ast.IdType(["int"])),
-                        )
-                    )
-                ],
+                TypeDecl("a", type=IdType(["char"])),
+                align=[Alignas(Typename(None, quals=[], align=None, type=TypeDecl(type=IdType(["int"]))))],
             ),
         ),
     ],
 )
-def test_alignof(test_input: str, expected: c_ast.AST) -> None:
+def test_alignof(test_input: str, expected: AST) -> None:
     tree = parse(test_input)
     decl = tree.ext[0]
     assert decl == expected
@@ -978,94 +842,64 @@ void foo() {
 """
 
     expected_list = [
-        c_ast.Decl(
+        Decl(
             "a",
-            c_ast.TypeDecl("a", type=c_ast.IdType(names=["int"])),
-            init=c_ast.FuncCall(
-                c_ast.Id("offsetof"),
-                args=c_ast.ExprList(
-                    [
-                        c_ast.Typename(
-                            None,
-                            quals=[],
-                            align=None,
-                            type=c_ast.TypeDecl(type=c_ast.Struct("S", decls=None)),
-                        ),
-                        c_ast.Id("p"),
-                    ]
+            TypeDecl("a", type=IdType(names=["int"])),
+            init=FuncCall(
+                Id("offsetof"),
+                args=ExprList(
+                    [Typename(None, quals=[], align=None, type=TypeDecl(type=Struct("S", decls=None))), Id("p")]
                 ),
             ),
         ),
-        c_ast.Assignment(
+        Assignment(
             op="=",
-            left=c_ast.StructRef(c_ast.Id("a"), type=".", field=c_ast.Id("b")),
-            right=c_ast.BinaryOp(
+            left=StructRef(Id("a"), type=".", field=Id("b")),
+            right=BinaryOp(
                 op="+",
-                left=c_ast.FuncCall(
-                    c_ast.Id("offsetof"),
-                    args=c_ast.ExprList(
+                left=FuncCall(
+                    Id("offsetof"),
+                    args=ExprList(
                         [
-                            c_ast.Typename(
-                                None,
-                                quals=[],
-                                align=None,
-                                type=c_ast.TypeDecl(type=c_ast.Struct("sockaddr", decls=None)),
-                            ),
-                            c_ast.Id("sp"),
+                            Typename(None, quals=[], align=None, type=TypeDecl(type=Struct("sockaddr", decls=None))),
+                            Id("sp"),
                         ]
                     ),
                 ),
-                right=c_ast.FuncCall(
-                    c_ast.Id("strlen"),
-                    args=c_ast.ExprList([c_ast.Id("bar")]),
-                ),
+                right=FuncCall(Id("strlen"), args=ExprList([Id("bar")])),
             ),
         ),
-        c_ast.Decl(
+        Decl(
             "a",
-            c_ast.TypeDecl("a", type=c_ast.IdType(["int"])),
-            init=c_ast.FuncCall(
-                c_ast.Id("offsetof"),
-                args=c_ast.ExprList(
+            TypeDecl("a", type=IdType(["int"])),
+            init=FuncCall(
+                Id("offsetof"),
+                args=ExprList(
                     [
-                        c_ast.Typename(
-                            None,
-                            quals=[],
-                            align=None,
-                            type=c_ast.TypeDecl(type=c_ast.Struct("S", decls=None)),
-                        ),
-                        c_ast.StructRef(
-                            c_ast.StructRef(c_ast.Id("p"), type=".", field=c_ast.Id("q")),
-                            type=".",
-                            field=c_ast.Id("r"),
-                        ),
+                        Typename(None, quals=[], align=None, type=TypeDecl(type=Struct("S", decls=None))),
+                        StructRef(StructRef(Id("p"), type=".", field=Id("q")), type=".", field=Id("r")),
                     ]
                 ),
             ),
         ),
-        c_ast.Decl(
+        Decl(
             "a",
-            c_ast.TypeDecl("a", type=c_ast.IdType(["int"])),
-            init=c_ast.FuncCall(
-                c_ast.Id("offsetof"),
-                args=c_ast.ExprList(
+            TypeDecl("a", type=IdType(["int"])),
+            init=FuncCall(
+                Id("offsetof"),
+                args=ExprList(
                     [
-                        c_ast.Typename(
-                            None,
-                            quals=[],
-                            align=None,
-                            type=c_ast.TypeDecl(type=c_ast.Struct("S", decls=None)),
-                        ),
-                        c_ast.ArrayRef(
-                            name=c_ast.ArrayRef(
-                                name=c_ast.StructRef(
-                                    name=c_ast.ArrayRef(name=c_ast.Id("p"), subscript=c_ast.Constant("int", "5")),
+                        Typename(None, quals=[], align=None, type=TypeDecl(type=Struct("S", decls=None))),
+                        ArrayRef(
+                            name=ArrayRef(
+                                name=StructRef(
+                                    name=ArrayRef(name=Id("p"), subscript=Constant("int", "5")),
                                     type=".",
-                                    field=c_ast.Id("q"),
+                                    field=Id("q"),
                                 ),
-                                subscript=c_ast.Constant("int", "4"),
+                                subscript=Constant("int", "4"),
                             ),
-                            subscript=c_ast.Constant("int", "5"),
+                            subscript=Constant("int", "5"),
                         ),
                     ]
                 ),
@@ -1074,7 +908,7 @@ void foo() {
     ]
 
     tree = parse(test_input)
-    assert c_ast.compare(tree.ext[0].body.block_items, expected_list)  # pyright: ignore
+    assert compare(tree.ext[0].body.block_items, expected_list)  # pyright: ignore
 
 
 @pytest.mark.xfail(reason="TODO")
@@ -1087,7 +921,7 @@ void foo() {
     tree = parse(test_input)
 
     compound = tree.ext[0].body  # pyright: ignore
-    assert isinstance(compound, c_ast.Compound)
+    assert isinstance(compound, Compound)
     assert compound.coord == Coord(2, 0, filename="<unknown>")
 
 
@@ -1096,33 +930,23 @@ void foo() {
     [
         pytest.param(
             0,
-            c_ast.CompoundLiteral(
-                type=c_ast.Typename(
-                    None,
-                    quals=[],
-                    align=None,
-                    type=c_ast.TypeDecl(type=c_ast.IdType(names=["long", "long"])),
-                ),
-                init=c_ast.InitList([c_ast.Id("k")]),
+            CompoundLiteral(
+                type=Typename(None, quals=[], align=None, type=TypeDecl(type=IdType(names=["long", "long"]))),
+                init=InitList([Id("k")]),
             ),
             id="C99 compound literal feature 1",
         ),
         pytest.param(
             1,
-            c_ast.CompoundLiteral(
-                type=c_ast.Typename(
-                    None,
-                    quals=[],
-                    align=None,
-                    type=c_ast.TypeDecl(type=c_ast.Struct("jk", decls=None)),
-                ),
-                init=c_ast.InitList(
+            CompoundLiteral(
+                type=Typename(None, quals=[], align=None, type=TypeDecl(type=Struct("jk", decls=None))),
+                init=InitList(
                     [
-                        c_ast.NamedInitializer(
-                            name=[c_ast.Id("a")],
-                            expr=c_ast.InitList([c_ast.Constant("int", "1"), c_ast.Constant(type="int", value="2")]),
+                        NamedInitializer(
+                            name=[Id("a")],
+                            expr=InitList([Constant("int", "1"), Constant(type="int", value="2")]),
                         ),
-                        c_ast.NamedInitializer(name=[c_ast.Id("b"), c_ast.Constant("int", "0")], expr=c_ast.Id("t")),
+                        NamedInitializer(name=[Id("b"), Constant("int", "0")], expr=Id("t")),
                     ]
                 ),
             ),
@@ -1131,7 +955,7 @@ void foo() {
     ],
 )
 @pytest.mark.xfail(reason="TODO")
-def test_compound_literals(index: int, expected: c_ast.CompoundLiteral) -> None:
+def test_compound_literals(index: int, expected: CompoundLiteral) -> None:
     test_input = r"""
 void foo() {
     p = (long long){k};
@@ -1141,7 +965,7 @@ void foo() {
     tree = parse(test_input)
 
     compound = tree.ext[0].body.block_items[index].right  # pyright: ignore
-    assert isinstance(compound, c_ast.CompoundLiteral)
+    assert isinstance(compound, CompoundLiteral)
     assert compound == expected
 
 
@@ -1159,72 +983,64 @@ void foo() {
 }"""
 
     expected = [
-        c_ast.Decl("a", c_ast.TypeDecl("a", type=c_ast.IdType(["int"]))),
-        c_ast.Compound(block_items=None),
-        c_ast.Compound([c_ast.Constant("int", value="1")]),
-        c_ast.Compound([c_ast.Constant("int", value="1"), c_ast.Constant("int", "2")]),
-        c_ast.Decl(
-            "b",
-            c_ast.TypeDecl("b", type=c_ast.IdType(["int"])),
-            init=c_ast.Compound([c_ast.Constant("int", "1")]),
-        ),
-        c_ast.Decl("c", c_ast.TypeDecl("c", type=c_ast.IdType(["int"]))),
-        c_ast.Decl(
+        Decl("a", TypeDecl("a", type=IdType(["int"]))),
+        Compound(block_items=None),
+        Compound([Constant("int", value="1")]),
+        Compound([Constant("int", value="1"), Constant("int", "2")]),
+        Decl("b", TypeDecl("b", type=IdType(["int"])), init=Compound([Constant("int", "1")])),
+        Decl("c", TypeDecl("c", type=IdType(["int"]))),
+        Decl(
             "d",
-            c_ast.TypeDecl("d", type=c_ast.IdType(["int"])),
-            init=c_ast.Compound(
+            TypeDecl("d", type=IdType(["int"])),
+            init=Compound(
                 [
-                    c_ast.Decl("x", c_ast.TypeDecl("x", type=c_ast.IdType(["int"])), init=c_ast.Constant("int", "1")),
-                    c_ast.BinaryOp(op="+", left=c_ast.Id("x"), right=c_ast.Constant("int", "2")),
+                    Decl("x", TypeDecl("x", type=IdType(["int"])), init=Constant("int", "1")),
+                    BinaryOp(op="+", left=Id("x"), right=Constant("int", "2")),
                 ]
             ),
         ),
-        c_ast.Assignment(
+        Assignment(
             op="=",
-            left=c_ast.Id("a"),
-            right=c_ast.Compound(
+            left=Id("a"),
+            right=Compound(
                 [
-                    c_ast.Decl(
-                        "x",
-                        c_ast.TypeDecl("x", type=c_ast.IdType(["int"])),
-                        init=c_ast.Constant("int", "1"),
-                    ),
-                    c_ast.BinaryOp(op="*", left=c_ast.Constant("int", "2"), right=c_ast.Id("x")),
+                    Decl("x", TypeDecl("x", type=IdType(["int"])), init=Constant("int", "1")),
+                    BinaryOp(op="*", left=Constant("int", "2"), right=Id("x")),
                 ]
             ),
         ),
     ]
 
     tree = parse(test_input)
-    assert c_ast.compare(tree.ext[0].body.block_items, expected)  # pyright: ignore
+    assert compare(tree.ext[0].body.block_items, expected)  # pyright: ignore
 
 
 @pytest.mark.parametrize(
     ("test_input", "expected"),
     [
-        ("enum mycolor op;", c_ast.Enum("mycolor")),
+        ("enum mycolor op;", Enum("mycolor")),
         (
             "enum mysize {large=20, small, medium} shoes;",
-            c_ast.Enum(
+            Enum(
                 "mysize",
-                c_ast.EnumeratorList(
+                EnumeratorList(
                     [
-                        c_ast.Enumerator("large", value=c_ast.Constant("int", "20")),
-                        c_ast.Enumerator("small"),
-                        c_ast.Enumerator("medium"),
+                        Enumerator("large", value=Constant("int", "20")),
+                        Enumerator("small"),
+                        Enumerator("medium"),
                     ]
                 ),
             ),
         ),
         pytest.param(
             "enum\n{\n    red,\n    blue,\n    green,\n} color;",
-            c_ast.Enum(
+            Enum(
                 None,
-                c_ast.EnumeratorList(
+                EnumeratorList(
                     [
-                        c_ast.Enumerator("red"),
-                        c_ast.Enumerator("blue"),
-                        c_ast.Enumerator("green"),
+                        Enumerator("red"),
+                        Enumerator("blue"),
+                        Enumerator("green"),
                     ]
                 ),
             ),
@@ -1232,10 +1048,10 @@ void foo() {
         ),
     ],
 )
-def test_enums(test_input: str, expected: c_ast.AST) -> None:
+def test_enums(test_input: str, expected: AST) -> None:
     tree = parse(test_input)
     enum_type = tree.ext[0].type.type  # pyright: ignore
-    assert isinstance(enum_type, c_ast.Enum)
+    assert isinstance(enum_type, Enum)
     assert enum_type == expected
 
 
@@ -1246,64 +1062,52 @@ def test_enums(test_input: str, expected: c_ast.AST) -> None:
             "typedef void* node;\nnode k;",
             slice(2),
             [
-                c_ast.Typedef(
+                Typedef(
                     "node",
                     quals=[],
                     storage=["typedef"],
-                    type=c_ast.PtrDecl(quals=[], type=c_ast.TypeDecl("node", type=c_ast.IdType(["void"]))),
+                    type=PtrDecl(quals=[], type=TypeDecl("node", type=IdType(["void"]))),
                 ),
-                c_ast.Decl("k", c_ast.TypeDecl("k", type=c_ast.IdType(["node"]))),
+                Decl("k", TypeDecl("k", type=IdType(["node"]))),
             ],
             id="with typedef",
         ),
         (
             "typedef int T;\ntypedef T *pT;\n\npT aa, bb;",
             3,
-            c_ast.Decl("bb", c_ast.TypeDecl("bb", type=c_ast.IdType(["pT"]))),
+            Decl("bb", TypeDecl("bb", type=IdType(["pT"]))),
         ),
         (
             "typedef char* __builtin_va_list;\ntypedef __builtin_va_list __gnuc_va_list;",
             1,
-            c_ast.Typedef(
+            Typedef(
                 "__gnuc_va_list",
                 quals=[],
                 storage=["typedef"],
-                type=c_ast.TypeDecl("__gnuc_va_list", type=c_ast.IdType(["__builtin_va_list"])),
+                type=TypeDecl("__gnuc_va_list", type=IdType(["__builtin_va_list"])),
             ),
         ),
         (
             "typedef struct tagHash Hash;",
             0,
-            c_ast.Typedef(
-                "Hash",
-                quals=[],
-                storage=["typedef"],
-                type=c_ast.TypeDecl("Hash", type=c_ast.Struct("tagHash", decls=None)),
-            ),
+            Typedef("Hash", quals=[], storage=["typedef"], type=TypeDecl("Hash", type=Struct("tagHash", decls=None))),
         ),
         (
             "typedef int (* const * const T)(void);",
             0,
-            c_ast.Typedef(
+            Typedef(
                 "T",
                 quals=[],
                 storage=["typedef"],
-                type=c_ast.PtrDecl(
+                type=PtrDecl(
                     quals=["const"],
-                    type=c_ast.PtrDecl(
+                    type=PtrDecl(
                         quals=["const"],
-                        type=c_ast.FuncDecl(
-                            args=c_ast.ParamList(
-                                [
-                                    c_ast.Typename(
-                                        None,
-                                        quals=[],
-                                        align=None,
-                                        type=c_ast.TypeDecl(type=c_ast.IdType(["void"])),
-                                    )
-                                ]
+                        type=FuncDecl(
+                            args=ParamList(
+                                [Typename(None, quals=[], align=None, type=TypeDecl(type=IdType(["void"])))]
                             ),
-                            type=c_ast.TypeDecl("T", type=c_ast.IdType(["int"])),
+                            type=TypeDecl("T", type=IdType(["int"])),
                         ),
                     ),
                 ),
@@ -1311,9 +1115,9 @@ def test_enums(test_input: str, expected: c_ast.AST) -> None:
         ),
     ],
 )
-def test_typedef(test_input: str, index: Union[int, slice], expected: Union[c_ast.AST, list[c_ast.AST]]) -> None:
+def test_typedef(test_input: str, index: TUnion[int, slice], expected: TUnion[AST, list[AST]]) -> None:
     tree = parse(test_input)
-    assert c_ast.compare(tree.ext[index], expected)
+    assert compare(tree.ext[index], expected)
 
 
 @pytest.mark.parametrize(
@@ -1331,24 +1135,15 @@ def test_typedef_error(test_input: str):
         (
             "struct {\n    int id;\n    char* name;\n} joe;",
             0,
-            c_ast.Decl(
+            Decl(
                 "joe",
-                c_ast.TypeDecl(
+                TypeDecl(
                     "joe",
-                    type=c_ast.Struct(
+                    type=Struct(
                         None,
                         decls=[
-                            c_ast.Decl(
-                                "id",
-                                c_ast.TypeDecl("id", type=c_ast.IdType(["int"])),
-                            ),
-                            c_ast.Decl(
-                                "name",
-                                c_ast.PtrDecl(
-                                    quals=[],
-                                    type=c_ast.TypeDecl("name", type=c_ast.IdType(["char"])),
-                                ),
-                            ),
+                            Decl("id", TypeDecl("id", type=IdType(["int"]))),
+                            Decl("name", PtrDecl(quals=[], type=TypeDecl("name", type=IdType(["char"])))),
                         ],
                     ),
                 ),
@@ -1357,25 +1152,22 @@ def test_typedef_error(test_input: str):
         (
             "struct node p;",
             0,
-            c_ast.Decl("p", c_ast.TypeDecl("p", type=c_ast.Struct("node"))),
+            Decl("p", TypeDecl("p", type=Struct("node"))),
         ),
         (
             "union pri ra;",
             0,
-            c_ast.Decl("ra", c_ast.TypeDecl("ra", type=c_ast.Union("pri"))),
+            Decl("ra", TypeDecl("ra", type=Union("pri"))),
         ),
         (
             "struct node* p;",
             0,
-            c_ast.Decl(
-                "p",
-                c_ast.PtrDecl(quals=[], type=c_ast.TypeDecl("p", type=c_ast.Struct("node"))),
-            ),
+            Decl("p", PtrDecl(quals=[], type=TypeDecl("p", type=Struct("node")))),
         ),
         (
             "struct node;",
             0,
-            c_ast.Decl(None, type=c_ast.Struct("node")),
+            Decl(None, type=Struct("node")),
         ),
         (
             "union\n"
@@ -1392,35 +1184,29 @@ def test_typedef_error(test_input: str):
             "    } ni;\n"
             "} u;",
             0,
-            c_ast.Decl(
+            Decl(
                 "u",
-                c_ast.TypeDecl(
+                TypeDecl(
                     "u",
-                    type=c_ast.Union(
+                    type=Union(
                         None,
                         decls=[
-                            c_ast.Decl(
+                            Decl(
                                 "n",
-                                type=c_ast.TypeDecl(
+                                type=TypeDecl(
                                     "n",
-                                    type=c_ast.Struct(
-                                        None,
-                                        decls=[c_ast.Decl("type", c_ast.TypeDecl("type", type=c_ast.IdType(["int"])))],
-                                    ),
+                                    type=Struct(None, decls=[Decl("type", TypeDecl("type", type=IdType(["int"])))]),
                                 ),
                             ),
-                            c_ast.Decl(
+                            Decl(
                                 "ni",
-                                c_ast.TypeDecl(
+                                TypeDecl(
                                     "ni",
-                                    type=c_ast.Struct(
+                                    type=Struct(
                                         None,
                                         decls=[
-                                            c_ast.Decl("type", c_ast.TypeDecl("type", type=c_ast.IdType(["int"]))),
-                                            c_ast.Decl(
-                                                "intnode",
-                                                c_ast.TypeDecl("intnode", type=c_ast.IdType(["int"])),
-                                            ),
+                                            Decl("type", TypeDecl("type", type=IdType(["int"]))),
+                                            Decl("intnode", TypeDecl("intnode", type=IdType(["int"]))),
                                         ],
                                     ),
                                 ),
@@ -1434,48 +1220,29 @@ def test_typedef_error(test_input: str):
             "typedef struct foo_tag\n" "{\n" "    void* data;\n" "} foo, *pfoo;",
             slice(2),
             [
-                c_ast.Typedef(
+                Typedef(
                     "foo",
                     quals=[],
                     storage=["typedef"],
-                    type=c_ast.TypeDecl(
+                    type=TypeDecl(
                         "foo",
-                        type=c_ast.Struct(
+                        type=Struct(
                             "foo_tag",
-                            decls=[
-                                c_ast.Decl(
-                                    "data",
-                                    c_ast.PtrDecl(
-                                        quals=[],
-                                        type=c_ast.TypeDecl("data", type=c_ast.IdType(["void"])),
-                                    ),
-                                )
-                            ],
+                            decls=[Decl("data", PtrDecl(quals=[], type=TypeDecl("data", type=IdType(["void"]))))],
                         ),
                     ),
                 ),
-                c_ast.Typedef(
+                Typedef(
                     "pfoo",
                     quals=[],
                     storage=["typedef"],
-                    type=c_ast.PtrDecl(
+                    type=PtrDecl(
                         quals=[],
-                        type=c_ast.TypeDecl(
+                        type=TypeDecl(
                             "pfoo",
-                            type=c_ast.Struct(
+                            type=Struct(
                                 "foo_tag",
-                                decls=[
-                                    c_ast.Decl(
-                                        "data",
-                                        c_ast.PtrDecl(
-                                            quals=[],
-                                            type=c_ast.TypeDecl(
-                                                "data",
-                                                type=c_ast.IdType(["void"]),
-                                            ),
-                                        ),
-                                    )
-                                ],
+                                decls=[Decl("data", PtrDecl(quals=[], type=TypeDecl("data", type=IdType(["void"]))))],
                             ),
                         ),
                     ),
@@ -1507,27 +1274,21 @@ def test_typedef_error(test_input: str):
             "\n"
             "} Hash;\n",
             3,
-            c_ast.Typedef(
+            Typedef(
                 "Hash",
                 quals=[],
                 storage=["typedef"],
-                type=c_ast.TypeDecl(
+                type=TypeDecl(
                     declname="Hash",
-                    type=c_ast.Struct(
+                    type=Struct(
                         "tagHash",
                         decls=[
-                            c_ast.Decl(
-                                "table_size",
-                                type=c_ast.TypeDecl("table_size", type=c_ast.IdType(["unsigned", "int"])),
-                            ),
-                            c_ast.Decl(
+                            Decl("table_size", type=TypeDecl("table_size", type=IdType(["unsigned", "int"]))),
+                            Decl(
                                 "heads",
-                                c_ast.PtrDecl(
+                                PtrDecl(
                                     quals=[],
-                                    type=c_ast.PtrDecl(
-                                        quals=[],
-                                        type=c_ast.TypeDecl("heads", type=c_ast.IdType(["Node"])),
-                                    ),
+                                    type=PtrDecl(quals=[], type=TypeDecl("heads", type=IdType(["Node"]))),
                                 ),
                             ),
                         ],
@@ -1537,10 +1298,10 @@ def test_typedef_error(test_input: str):
         ),
     ],
 )
-def test_struct_union(test_input: str, index: Union[int, slice], expected: Union[c_ast.AST, list[c_ast.AST]]) -> None:
+def test_struct_union(test_input: str, index: TUnion[int, slice], expected: TUnion[AST, list[AST]]) -> None:
     tree = parse(test_input)
     type_ = tree.ext[index]
-    assert c_ast.compare(type_, expected)
+    assert compare(type_, expected)
 
 
 @pytest.mark.xfail(reason="TODO")
@@ -1567,57 +1328,37 @@ struct _on_exit_args {
     [
         (
             "struct Foo {\n   enum Bar { A = 1 };\n};",
-            c_ast.Decl(
+            Decl(
                 None,
-                c_ast.Struct(
-                    "Foo",
-                    decls=[
-                        c_ast.Decl(
-                            None,
-                            c_ast.Enum(
-                                "Bar",
-                                c_ast.EnumeratorList([c_ast.Enumerator("A", c_ast.Constant("int", "1"))]),
-                            ),
-                        )
-                    ],
-                ),
+                Struct("Foo", decls=[Decl(None, Enum("Bar", EnumeratorList([Enumerator("A", Constant("int", "1"))])))]),
             ),
         ),
         (
             "struct Foo {\n    enum Bar { A = 1, B, C } bar;\n    enum Baz { D = A } baz;\n} foo;",
-            c_ast.Decl(
+            Decl(
                 "foo",
-                c_ast.TypeDecl(
+                TypeDecl(
                     "foo",
-                    type=c_ast.Struct(
+                    type=Struct(
                         "Foo",
                         decls=[
-                            c_ast.Decl(
+                            Decl(
                                 "bar",
-                                c_ast.TypeDecl(
+                                TypeDecl(
                                     "bar",
-                                    type=c_ast.Enum(
+                                    type=Enum(
                                         "Bar",
-                                        c_ast.EnumeratorList(
+                                        EnumeratorList(
                                             [
-                                                c_ast.Enumerator("A", c_ast.Constant("int", "1")),
-                                                c_ast.Enumerator("B"),
-                                                c_ast.Enumerator("C"),
+                                                Enumerator("A", Constant("int", "1")),
+                                                Enumerator("B"),
+                                                Enumerator("C"),
                                             ]
                                         ),
                                     ),
                                 ),
                             ),
-                            c_ast.Decl(
-                                "baz",
-                                c_ast.TypeDecl(
-                                    "baz",
-                                    type=c_ast.Enum(
-                                        "Baz",
-                                        c_ast.EnumeratorList([c_ast.Enumerator("D", c_ast.Id("A"))]),
-                                    ),
-                                ),
-                            ),
+                            Decl("baz", TypeDecl("baz", type=Enum("Baz", EnumeratorList([Enumerator("D", Id("A"))])))),
                         ],
                     ),
                 ),
@@ -1625,7 +1366,7 @@ struct _on_exit_args {
         ),
     ],
 )
-def test_struct_enum(test_input: str, expected: c_ast.AST):
+def test_struct_enum(test_input: str, expected: AST):
     tree = parse(test_input)
     type_ = tree.ext[0]
     assert type_ == expected
@@ -1636,27 +1377,21 @@ def test_struct_enum(test_input: str, expected: c_ast.AST):
     [
         (
             "struct {\n    int a;;\n} foo;",
-            c_ast.Decl(
-                "foo",
-                c_ast.TypeDecl(
-                    "foo",
-                    type=c_ast.Struct(None, decls=[c_ast.Decl("a", c_ast.TypeDecl("a", type=c_ast.IdType(["int"])))]),
-                ),
-            ),
+            Decl("foo", TypeDecl("foo", type=Struct(None, decls=[Decl("a", TypeDecl("a", type=IdType(["int"])))]))),
         ),
         (
             "struct {\n    int a;;;;\n    float b, c;\n    ;;\n    char d;\n} foo;",
-            c_ast.Decl(
+            Decl(
                 "foo",
-                type=c_ast.TypeDecl(
+                type=TypeDecl(
                     "foo",
-                    type=c_ast.Struct(
+                    type=Struct(
                         None,
                         decls=[
-                            c_ast.Decl("a", c_ast.TypeDecl("a", type=c_ast.IdType(["int"]))),
-                            c_ast.Decl("b", c_ast.TypeDecl("b", type=c_ast.IdType(["float"]))),
-                            c_ast.Decl("c", c_ast.TypeDecl("c", type=c_ast.IdType(["float"]))),
-                            c_ast.Decl("d", c_ast.TypeDecl("d", type=c_ast.IdType(["char"]))),
+                            Decl("a", TypeDecl("a", type=IdType(["int"]))),
+                            Decl("b", TypeDecl("b", type=IdType(["float"]))),
+                            Decl("c", TypeDecl("c", type=IdType(["float"]))),
+                            Decl("d", TypeDecl("d", type=IdType(["char"]))),
                         ],
                     ),
                 ),
@@ -1664,7 +1399,7 @@ def test_struct_enum(test_input: str, expected: c_ast.AST):
         ),
     ],
 )
-def test_struct_with_extra_semis_inside(test_input: str, expected: c_ast.AST):
+def test_struct_with_extra_semis_inside(test_input: str, expected: AST):
     tree = parse(test_input)
     type_ = tree.ext[0]
     assert type_ == expected
@@ -1675,20 +1410,11 @@ def test_struct_with_extra_semis_inside(test_input: str, expected: c_ast.AST):
     [
         (
             "struct {\n    ;int a;\n} foo;",
-            c_ast.Decl(
-                "foo",
-                c_ast.TypeDecl(
-                    "foo",
-                    type=c_ast.Struct(
-                        None,
-                        decls=[c_ast.Decl("a", c_ast.TypeDecl("a", type=c_ast.IdType(["int"])))],
-                    ),
-                ),
-            ),
+            Decl("foo", TypeDecl("foo", type=Struct(None, decls=[Decl("a", TypeDecl("a", type=IdType(["int"])))]))),
         )
     ],
 )
-def test_struct_with_initial_semi(test_input: str, expected: c_ast.AST):
+def test_struct_with_initial_semi(test_input: str, expected: AST):
     tree = parse(test_input)
     type_ = tree.ext[0]
     assert type_ == expected
@@ -1712,49 +1438,34 @@ def test_struct_with_initial_semi(test_input: str, expected: c_ast.AST):
             "        int intnode;\n"
             "    };\n"
             "} u;",
-            c_ast.FuncDef(
-                decl=c_ast.Decl(
-                    "foo",
-                    c_ast.FuncDecl(args=None, type=c_ast.TypeDecl("foo", type=c_ast.IdType(["void"]))),
-                ),
+            FuncDef(
+                decl=Decl("foo", FuncDecl(args=None, type=TypeDecl("foo", type=IdType(["void"])))),
                 param_decls=None,
-                body=c_ast.Compound(
+                body=Compound(
                     [
-                        c_ast.Decl("a", c_ast.TypeDecl("a", type=c_ast.IdType(["int"]))),
-                        c_ast.Compound(block_items=None),
-                        c_ast.Compound(block_items=[c_ast.Constant("int", "1")]),
-                        c_ast.Compound(block_items=[c_ast.Constant("int", "1"), c_ast.Constant("int", "2")]),
-                        c_ast.Decl(
-                            "b",
-                            c_ast.TypeDecl("b", type=c_ast.IdType(["int"])),
-                            init=c_ast.Compound([c_ast.Constant("int", "1")]),
-                        ),
-                        c_ast.Decl("c", c_ast.TypeDecl("c", type=c_ast.IdType(["int"]))),
-                        c_ast.Decl(
+                        Decl("a", TypeDecl("a", type=IdType(["int"]))),
+                        Compound(block_items=None),
+                        Compound(block_items=[Constant("int", "1")]),
+                        Compound(block_items=[Constant("int", "1"), Constant("int", "2")]),
+                        Decl("b", TypeDecl("b", type=IdType(["int"])), init=Compound([Constant("int", "1")])),
+                        Decl("c", TypeDecl("c", type=IdType(["int"]))),
+                        Decl(
                             "d",
-                            c_ast.TypeDecl("d", type=c_ast.IdType(["int"])),
-                            init=c_ast.Compound(
+                            TypeDecl("d", type=IdType(["int"])),
+                            init=Compound(
                                 [
-                                    c_ast.Decl(
-                                        "x",
-                                        c_ast.TypeDecl("x", type=c_ast.IdType(["int"])),
-                                        init=c_ast.Constant("int", "1"),
-                                    ),
-                                    c_ast.BinaryOp(op="+", left=c_ast.Id("x"), right=c_ast.Constant("int", "2")),
+                                    Decl("x", TypeDecl("x", type=IdType(["int"])), init=Constant("int", "1")),
+                                    BinaryOp(op="+", left=Id("x"), right=Constant("int", "2")),
                                 ]
                             ),
                         ),
-                        c_ast.Assignment(
+                        Assignment(
                             op="=",
-                            left=c_ast.Id("a"),
-                            right=c_ast.Compound(
+                            left=Id("a"),
+                            right=Compound(
                                 [
-                                    c_ast.Decl(
-                                        "x",
-                                        c_ast.TypeDecl("x", type=c_ast.IdType(["int"])),
-                                        init=c_ast.Constant("int", "1"),
-                                    ),
-                                    c_ast.BinaryOp(op="*", left=c_ast.Constant("int", "2"), right=c_ast.Id("x")),
+                                    Decl("x", TypeDecl("x", type=IdType(["int"])), init=Constant("int", "1")),
+                                    BinaryOp(op="*", left=Constant("int", "2"), right=Id("x")),
                                 ]
                             ),
                         ),
@@ -1771,43 +1482,37 @@ def test_struct_with_initial_semi(test_input: str, expected: c_ast.AST):
             "    };\n"
             "    int m;\n"
             "} v1;\n",
-            c_ast.Decl(
+            Decl(
                 "v1",
-                c_ast.TypeDecl(
+                TypeDecl(
                     "v1",
-                    type=c_ast.Struct(
+                    type=Struct(
                         "v",
                         decls=[
-                            c_ast.Decl(
+                            Decl(
                                 None,
-                                c_ast.Union(
+                                Union(
                                     None,
                                     decls=[
-                                        c_ast.Decl(
+                                        Decl(
                                             None,
-                                            c_ast.Struct(
+                                            Struct(
                                                 None,
                                                 decls=[
-                                                    c_ast.Decl("i", c_ast.TypeDecl("i", type=c_ast.IdType(["int"]))),
-                                                    c_ast.Decl("j", c_ast.TypeDecl("j", type=c_ast.IdType(["int"]))),
+                                                    Decl("i", TypeDecl("i", type=IdType(["int"]))),
+                                                    Decl("j", TypeDecl("j", type=IdType(["int"]))),
                                                 ],
                                             ),
                                         ),
-                                        c_ast.Decl(
+                                        Decl(
                                             "w",
-                                            c_ast.TypeDecl(
+                                            TypeDecl(
                                                 "w",
-                                                type=c_ast.Struct(
+                                                type=Struct(
                                                     None,
                                                     decls=[
-                                                        c_ast.Decl(
-                                                            "k",
-                                                            c_ast.TypeDecl("k", type=c_ast.IdType(["long"])),
-                                                        ),
-                                                        c_ast.Decl(
-                                                            "l",
-                                                            c_ast.TypeDecl("l", type=c_ast.IdType(["long"])),
-                                                        ),
+                                                        Decl("k", TypeDecl("k", type=IdType(["long"]))),
+                                                        Decl("l", TypeDecl("l", type=IdType(["long"]))),
                                                     ],
                                                 ),
                                             ),
@@ -1815,7 +1520,7 @@ def test_struct_with_initial_semi(test_input: str, expected: c_ast.AST):
                                     ],
                                 ),
                             ),
-                            c_ast.Decl("m", c_ast.TypeDecl("m", type=c_ast.IdType(["int"]))),
+                            Decl("m", TypeDecl("m", type=IdType(["int"]))),
                         ],
                     ),
                 ),
@@ -1824,15 +1529,15 @@ def test_struct_with_initial_semi(test_input: str, expected: c_ast.AST):
         ),
         pytest.param(
             "struct v {\n    int i;\n    float;\n} v2;",
-            c_ast.Decl(
+            Decl(
                 "v2",
-                c_ast.TypeDecl(
+                TypeDecl(
                     "v2",
-                    type=c_ast.Struct(
+                    type=Struct(
                         "v",
                         decls=[
-                            c_ast.Decl("i", c_ast.TypeDecl("i", type=c_ast.IdType(["int"]))),
-                            c_ast.Decl(None, c_ast.IdType(["float"])),
+                            Decl("i", TypeDecl("i", type=IdType(["int"]))),
+                            Decl(None, IdType(["float"])),
                         ],
                     ),
                 ),
@@ -1840,7 +1545,7 @@ def test_struct_with_initial_semi(test_input: str, expected: c_ast.AST):
         ),
     ],
 )
-def test_anonymous_struct_union(test_input: str, expected: c_ast.AST):
+def test_anonymous_struct_union(test_input: str, expected: AST):
     tree = parse(test_input)
     type_ = tree.ext[0]
     assert type_ == expected
@@ -1867,19 +1572,19 @@ void main(void)
 
     tree = parse(test_input)
 
-    expected2 = c_ast.Decl(
+    expected2 = Decl(
         "sye",
-        c_ast.TypeDecl(
+        TypeDecl(
             "sye",
-            type=c_ast.Struct(
+            type=Struct(
                 None,
                 decls=[
-                    c_ast.Decl("Name", c_ast.TypeDecl("Name", type=c_ast.IdType(["Name"]))),
-                    c_ast.Decl(
+                    Decl("Name", TypeDecl("Name", type=IdType(["Name"]))),
+                    Decl(
                         "NameArray",
-                        c_ast.ArrayDecl(
-                            type=c_ast.TypeDecl("NameArray", type=c_ast.IdType(["Name"])),
-                            dim=c_ast.Constant("int", "3"),
+                        ArrayDecl(
+                            type=TypeDecl("NameArray", type=IdType(["Name"])),
+                            dim=Constant("int", "3"),
                             dim_quals=[],
                         ),
                     ),
@@ -1904,23 +1609,15 @@ struct {
     tree = parse(s1)
     parsed_struct = tree.ext[0]
 
-    expected = c_ast.Decl(
+    expected = Decl(
         "joe",
-        c_ast.TypeDecl(
+        TypeDecl(
             "joe",
-            type=c_ast.Struct(
+            type=Struct(
                 None,
                 decls=[
-                    c_ast.Decl(
-                        "k",
-                        c_ast.TypeDecl("k", type=c_ast.IdType(["int"])),
-                        bitsize=c_ast.Constant("int", "6"),
-                    ),
-                    c_ast.Decl(
-                        None,
-                        c_ast.TypeDecl(type=c_ast.IdType(["int"])),
-                        bitsize=c_ast.Constant("int", "2"),
-                    ),
+                    Decl("k", TypeDecl("k", type=IdType(["int"])), bitsize=Constant("int", "6")),
+                    Decl(None, TypeDecl(type=IdType(["int"])), bitsize=Constant("int", "2")),
                 ],
             ),
         ),
@@ -1932,12 +1629,12 @@ struct {
 @pytest.mark.parametrize(
     ("test_input", "expected"),
     [
-        ("struct foo { };", c_ast.Decl(None, c_ast.Struct("foo", decls=[]))),
-        ("struct { } foo;", c_ast.Decl("foo", c_ast.TypeDecl("foo", type=c_ast.Struct(None, decls=[])))),
-        ("union { } foo;", c_ast.Decl("foo", c_ast.TypeDecl("foo", type=c_ast.Union(None, decls=[])))),
+        ("struct foo { };", Decl(None, Struct("foo", decls=[]))),
+        ("struct { } foo;", Decl("foo", TypeDecl("foo", type=Struct(None, decls=[])))),
+        ("union { } foo;", Decl("foo", TypeDecl("foo", type=Union(None, decls=[])))),
     ],
 )
-def test_struct_empty(test_input: str, expected: c_ast.AST):
+def test_struct_empty(test_input: str, expected: AST):
     """Tests that parsing an empty struct works.
 
     Empty structs do NOT follow C99 (See 6.2.5-20 of the C99 standard).
@@ -1964,21 +1661,15 @@ def test_struct_empty(test_input: str, expected: c_ast.AST):
                 "} Entry;"
             ),
             1,
-            c_ast.Decl(
+            Decl(
                 "Entry",
-                c_ast.TypeDecl(
+                TypeDecl(
                     "Entry",
-                    type=c_ast.Struct(
+                    type=Struct(
                         "tagEntry",
                         decls=[
-                            c_ast.Decl(
-                                "key",
-                                c_ast.PtrDecl(quals=[], type=c_ast.TypeDecl("key", type=c_ast.IdType(["char"]))),
-                            ),
-                            c_ast.Decl(
-                                "value",
-                                c_ast.PtrDecl(quals=[], type=c_ast.TypeDecl("value", type=c_ast.IdType(["char"]))),
-                            ),
+                            Decl("key", PtrDecl(quals=[], type=TypeDecl("key", type=IdType(["char"])))),
+                            Decl("value", PtrDecl(quals=[], type=TypeDecl("value", type=IdType(["char"])))),
                         ],
                     ),
                 ),
@@ -1995,21 +1686,15 @@ def test_struct_empty(test_input: str, expected: c_ast.AST):
             "    char* value;\n"
             "} Entry;",
             2,
-            c_ast.Decl(
+            Decl(
                 "Entry",
-                c_ast.TypeDecl(
+                TypeDecl(
                     "Entry",
-                    type=c_ast.Struct(
+                    type=Struct(
                         "tagEntry",
                         decls=[
-                            c_ast.Decl(
-                                "key",
-                                c_ast.PtrDecl(quals=[], type=c_ast.TypeDecl("key", type=c_ast.IdType(["char"]))),
-                            ),
-                            c_ast.Decl(
-                                "value",
-                                c_ast.PtrDecl(quals=[], type=c_ast.TypeDecl("value", type=c_ast.IdType(["char"]))),
-                            ),
+                            Decl("key", PtrDecl(quals=[], type=TypeDecl("key", type=IdType(["char"])))),
+                            Decl("value", PtrDecl(quals=[], type=TypeDecl("value", type=IdType(["char"])))),
                         ],
                     ),
                 ),
@@ -2018,23 +1703,17 @@ def test_struct_empty(test_input: str, expected: c_ast.AST):
         (
             "typedef int mytag;\n\nenum mytag {ABC, CDE};\nenum mytag joe;\n",
             1,
-            c_ast.Decl(
-                None,
-                type=c_ast.Enum(
-                    "mytag",
-                    c_ast.EnumeratorList([c_ast.Enumerator("ABC", None), c_ast.Enumerator("CDE", None)]),
-                ),
-            ),
+            Decl(None, type=Enum("mytag", EnumeratorList([Enumerator("ABC", None), Enumerator("CDE", None)]))),
         ),
     ],
 )
-def test_tags_namespace(test_input: str, index: Union[int, slice], expected: Union[c_ast.AST, list[c_ast.AST]]):
+def test_tags_namespace(test_input: str, index: TUnion[int, slice], expected: TUnion[AST, list[AST]]):
     """Tests that the tags of structs/unions/enums reside in a separate namespace and
     can be named after existing types.
     """
 
     tree = parse(test_input)
-    assert c_ast.compare(tree.ext[index], expected)
+    assert compare(tree.ext[index], expected)
 
 
 @pytest.mark.parametrize(
@@ -2042,33 +1721,29 @@ def test_tags_namespace(test_input: str, index: Union[int, slice], expected: Uni
     [
         (
             "int a, b;",
-            c_ast.File(
+            File(
                 [
-                    c_ast.Decl("a", c_ast.TypeDecl("a", type=c_ast.IdType(["int"]))),
-                    c_ast.Decl("b", c_ast.TypeDecl("b", type=c_ast.IdType(["int"]))),
+                    Decl("a", TypeDecl("a", type=IdType(["int"]))),
+                    Decl("b", TypeDecl("b", type=IdType(["int"]))),
                 ]
             ),
         ),
         (
             "char* p, notp, ar[4];",
-            c_ast.File(
+            File(
                 [
-                    c_ast.Decl("p", c_ast.PtrDecl(quals=[], type=c_ast.TypeDecl("p", type=c_ast.IdType(["char"])))),
-                    c_ast.Decl("notp", c_ast.TypeDecl("notp", type=c_ast.IdType(["char"]))),
-                    c_ast.Decl(
+                    Decl("p", PtrDecl(quals=[], type=TypeDecl("p", type=IdType(["char"])))),
+                    Decl("notp", TypeDecl("notp", type=IdType(["char"]))),
+                    Decl(
                         "ar",
-                        c_ast.ArrayDecl(
-                            type=c_ast.TypeDecl("ar", type=c_ast.IdType(["char"])),
-                            dim=c_ast.Constant("int", "4"),
-                            dim_quals=[],
-                        ),
+                        ArrayDecl(type=TypeDecl("ar", type=IdType(["char"])), dim=Constant("int", "4"), dim_quals=[]),
                     ),
                 ]
             ),
         ),
     ],
 )
-def test_multi_decls(test_input: str, expected: c_ast.AST):
+def test_multi_decls(test_input: str, expected: AST):
     tree = parse(test_input)
     assert tree == expected
 
@@ -2093,44 +1768,34 @@ def test_invalid_typedef_storage_qual_error():
         (
             "typedef int numbertype;\ntypedef int numbertype;",
             [
-                c_ast.Typedef(
-                    "numbertype",
-                    quals=[],
-                    storage=["typedef"],
-                    type=c_ast.TypeDecl("numbertype", type=c_ast.IdType(["int"])),
-                ),
-                c_ast.Typedef(
-                    "numbertype",
-                    quals=[],
-                    storage=["typedef"],
-                    type=c_ast.TypeDecl("numbertype", type=c_ast.IdType(["int"])),
-                ),
+                Typedef("numbertype", quals=[], storage=["typedef"], type=TypeDecl("numbertype", type=IdType(["int"]))),
+                Typedef("numbertype", quals=[], storage=["typedef"], type=TypeDecl("numbertype", type=IdType(["int"]))),
             ],
         ),
         (
             "typedef int (*funcptr)(int x);\ntypedef int (*funcptr)(int x);",
             [
-                c_ast.Typedef(
+                Typedef(
                     "funcptr",
                     quals=[],
                     storage=["typedef"],
-                    type=c_ast.PtrDecl(
+                    type=PtrDecl(
                         quals=[],
-                        type=c_ast.FuncDecl(
-                            args=c_ast.ParamList([c_ast.Decl("x", c_ast.TypeDecl("x", type=c_ast.IdType(["int"])))]),
-                            type=c_ast.TypeDecl("funcptr", type=c_ast.IdType(["int"])),
+                        type=FuncDecl(
+                            args=ParamList([Decl("x", TypeDecl("x", type=IdType(["int"])))]),
+                            type=TypeDecl("funcptr", type=IdType(["int"])),
                         ),
                     ),
                 ),
-                c_ast.Typedef(
+                Typedef(
                     "funcptr",
                     quals=[],
                     storage=["typedef"],
-                    type=c_ast.PtrDecl(
+                    type=PtrDecl(
                         quals=[],
-                        type=c_ast.FuncDecl(
-                            args=c_ast.ParamList([c_ast.Decl("x", c_ast.TypeDecl("x", type=c_ast.IdType(["int"])))]),
-                            type=c_ast.TypeDecl("funcptr", type=c_ast.IdType(["int"])),
+                        type=FuncDecl(
+                            args=ParamList([Decl("x", TypeDecl("x", type=IdType(["int"])))]),
+                            type=TypeDecl("funcptr", type=IdType(["int"])),
                         ),
                     ),
                 ),
@@ -2139,23 +1804,23 @@ def test_invalid_typedef_storage_qual_error():
         (
             "typedef int numberarray[5];\ntypedef int numberarray[5];",
             [
-                c_ast.Typedef(
+                Typedef(
                     "numberarray",
                     quals=[],
                     storage=["typedef"],
-                    type=c_ast.ArrayDecl(
-                        type=c_ast.TypeDecl("numberarray", type=c_ast.IdType(["int"])),
-                        dim=c_ast.Constant("int", "5"),
+                    type=ArrayDecl(
+                        type=TypeDecl("numberarray", type=IdType(["int"])),
+                        dim=Constant("int", "5"),
                         dim_quals=[],
                     ),
                 ),
-                c_ast.Typedef(
+                Typedef(
                     "numberarray",
                     quals=[],
                     storage=["typedef"],
-                    type=c_ast.ArrayDecl(
-                        type=c_ast.TypeDecl("numberarray", type=c_ast.IdType(["int"])),
-                        dim=c_ast.Constant("int", "5"),
+                    type=ArrayDecl(
+                        type=TypeDecl("numberarray", type=IdType(["int"])),
+                        dim=Constant("int", "5"),
                         dim_quals=[],
                     ),
                 ),
@@ -2163,13 +1828,13 @@ def test_invalid_typedef_storage_qual_error():
         ),
     ],
 )
-def test_duplicate_typedef(test_input: str, expected: list[c_ast.AST]):
+def test_duplicate_typedef(test_input: str, expected: list[AST]):
     """Tests that redeclarations of existing types are parsed correctly. This is non-standard, but allowed by many
     compilers.
     """
 
     tree = parse(test_input)
-    assert c_ast.compare(tree.ext, expected)
+    assert compare(tree.ext, expected)
 
 
 @pytest.mark.parametrize(
@@ -2177,64 +1842,50 @@ def test_duplicate_typedef(test_input: str, expected: list[c_ast.AST]):
     [
         (
             "int a = 16;",
-            c_ast.Decl("a", c_ast.TypeDecl("a", type=c_ast.IdType(["int"])), init=c_ast.Constant("int", "16")),
+            Decl("a", TypeDecl("a", type=IdType(["int"])), init=Constant("int", "16")),
         ),
         (
             "float f = 0xEF.56p1;",
-            c_ast.Decl(
-                "f",
-                c_ast.TypeDecl("f", type=c_ast.IdType(["float"])),
-                init=c_ast.Constant("float", "0xEF.56p1"),
-            ),
+            Decl("f", TypeDecl("f", type=IdType(["float"])), init=Constant("float", "0xEF.56p1")),
         ),
         (
             "int bitmask = 0b1001010;",
-            c_ast.Decl(
-                "bitmask",
-                c_ast.TypeDecl("bitmask", type=c_ast.IdType(["int"])),
-                init=c_ast.Constant("int", "0b1001010"),
-            ),
+            Decl("bitmask", TypeDecl("bitmask", type=IdType(["int"])), init=Constant("int", "0b1001010")),
         ),
         (
             "long ar[] = {7, 8, 9};",
-            c_ast.Decl(
+            Decl(
                 "ar",
-                c_ast.ArrayDecl(c_ast.TypeDecl("ar", type=c_ast.IdType(["long"])), dim=None, dim_quals=[]),
-                init=c_ast.InitList(
-                    [c_ast.Constant("int", "7"), c_ast.Constant("int", "8"), c_ast.Constant("int", "9")]
-                ),
+                ArrayDecl(TypeDecl("ar", type=IdType(["long"])), dim=None, dim_quals=[]),
+                init=InitList([Constant("int", "7"), Constant("int", "8"), Constant("int", "9")]),
             ),
         ),
         (
             "long ar[4] = {};",
-            c_ast.Decl(
+            Decl(
                 "ar",
-                c_ast.ArrayDecl(
-                    c_ast.TypeDecl("ar", type=c_ast.IdType(["long"])),
-                    dim=c_ast.Constant("int", "4"),
-                    dim_quals=[],
-                ),
-                init=c_ast.InitList([]),
+                ArrayDecl(TypeDecl("ar", type=IdType(["long"])), dim=Constant("int", "4"), dim_quals=[]),
+                init=InitList([]),
             ),
         ),
         (
             "char p = j;",
-            c_ast.Decl("p", c_ast.TypeDecl("p", type=c_ast.IdType(["char"])), init=c_ast.Id("j")),
+            Decl("p", TypeDecl("p", type=IdType(["char"])), init=Id("j")),
         ),
         (
             "char x = 'c', *p = {0, 1, 2, {4, 5}, 6};",
             [
-                c_ast.Decl("x", c_ast.TypeDecl("x", type=c_ast.IdType(["char"])), init=c_ast.Constant("char", "'c'")),
-                c_ast.Decl(
+                Decl("x", TypeDecl("x", type=IdType(["char"])), init=Constant("char", "'c'")),
+                Decl(
                     "p",
-                    c_ast.PtrDecl(quals=[], type=c_ast.TypeDecl("p", type=c_ast.IdType(["char"]))),
-                    init=c_ast.InitList(
+                    PtrDecl(quals=[], type=TypeDecl("p", type=IdType(["char"]))),
+                    init=InitList(
                         [
-                            c_ast.Constant("int", "0"),
-                            c_ast.Constant("int", "1"),
-                            c_ast.Constant("int", "2"),
-                            c_ast.InitList([c_ast.Constant("int", "4"), c_ast.Constant("int", "5")]),
-                            c_ast.Constant("int", "6"),
+                            Constant("int", "0"),
+                            Constant("int", "1"),
+                            Constant("int", "2"),
+                            InitList([Constant("int", "4"), Constant("int", "5")]),
+                            Constant("int", "6"),
                         ]
                     ),
                 ),
@@ -2242,75 +1893,55 @@ def test_duplicate_typedef(test_input: str, expected: list[c_ast.AST]):
         ),
         (
             "float d = 1.0;",
-            c_ast.Decl("d", c_ast.TypeDecl("d", type=c_ast.IdType(["float"])), init=c_ast.Constant("double", "1.0")),
+            Decl("d", TypeDecl("d", type=IdType(["float"])), init=Constant("double", "1.0")),
         ),
         (
             "float ld = 1.0l;",
-            c_ast.Decl(
-                "ld",
-                c_ast.TypeDecl("ld", type=c_ast.IdType(["float"])),
-                init=c_ast.Constant("long double", "1.0l"),
-            ),
+            Decl("ld", TypeDecl("ld", type=IdType(["float"])), init=Constant("long double", "1.0l")),
         ),
         (
             "float ld = 1.0L;",
-            c_ast.Decl(
-                "ld",
-                c_ast.TypeDecl("ld", type=c_ast.IdType(["float"])),
-                init=c_ast.Constant("long double", "1.0L"),
-            ),
+            Decl("ld", TypeDecl("ld", type=IdType(["float"])), init=Constant("long double", "1.0L")),
         ),
         (
             "float ld = 1.0f;",
-            c_ast.Decl("ld", c_ast.TypeDecl("ld", type=c_ast.IdType(["float"])), init=c_ast.Constant("float", "1.0f")),
+            Decl("ld", TypeDecl("ld", type=IdType(["float"])), init=Constant("float", "1.0f")),
         ),
         (
             "float ld = 1.0F;",
-            c_ast.Decl("ld", c_ast.TypeDecl("ld", type=c_ast.IdType(["float"])), init=c_ast.Constant("float", "1.0F")),
+            Decl("ld", TypeDecl("ld", type=IdType(["float"])), init=Constant("float", "1.0F")),
         ),
         (
             "float ld = 0xDE.38p0;",
-            c_ast.Decl(
-                "ld",
-                c_ast.TypeDecl("ld", type=c_ast.IdType(["float"])),
-                init=c_ast.Constant("float", "0xDE.38p0"),
-            ),
+            Decl("ld", TypeDecl("ld", type=IdType(["float"])), init=Constant("float", "0xDE.38p0")),
         ),
         (
             "int i = 1;",
-            c_ast.Decl("i", c_ast.TypeDecl("i", type=c_ast.IdType(["int"])), init=c_ast.Constant("int", "1")),
+            Decl("i", TypeDecl("i", type=IdType(["int"])), init=Constant("int", "1")),
         ),
         (
             "long int li = 1l;",
-            c_ast.Decl(
-                "li",
-                c_ast.TypeDecl("li", type=c_ast.IdType(["long", "int"])),
-                init=c_ast.Constant("long int", "1l"),
-            ),
+            Decl("li", TypeDecl("li", type=IdType(["long", "int"])), init=Constant("long int", "1l")),
         ),
         (
             "unsigned int ui = 1u;",
-            c_ast.Decl(
-                "ui",
-                c_ast.TypeDecl("ui", type=c_ast.IdType(["unsigned", "int"])),
-                init=c_ast.Constant("unsigned int", "1u"),
-            ),
+            Decl("ui", TypeDecl("ui", type=IdType(["unsigned", "int"])), init=Constant("unsigned int", "1u")),
         ),
         (
             "unsigned long long int ulli = 1LLU;",
-            c_ast.Decl(
+            Decl(
                 "ulli",
-                c_ast.TypeDecl("ulli", type=c_ast.IdType(["unsigned", "long", "long", "int"])),
-                init=c_ast.Constant("unsigned long long int", "1LLU"),
+                TypeDecl("ulli", type=IdType(["unsigned", "long", "long", "int"])),
+                init=Constant("unsigned long long int", "1LLU"),
             ),
         ),
     ],
 )
-def test_decl_inits(test_input: str, expected: c_ast.AST):
+def test_decl_inits(test_input: str, expected: AST):
     tree = parse(test_input)
 
     if isinstance(expected, list):
-        assert c_ast.compare(tree.ext, expected)
+        assert compare(tree.ext, expected)
     else:
         assert tree.ext[0] == expected
 
@@ -2320,42 +1951,42 @@ def test_decl_inits(test_input: str, expected: c_ast.AST):
     [
         (
             "int a = {.k = 16};",
-            c_ast.InitList([c_ast.NamedInitializer(name=[c_ast.Id("k")], expr=c_ast.Constant("int", "16"))]),
+            InitList([NamedInitializer(name=[Id("k")], expr=Constant("int", "16"))]),
         ),
         (
             "int a = { [0].a = {1}, [1].a[0] = 2 };",
-            c_ast.InitList(
+            InitList(
                 [
-                    c_ast.NamedInitializer(
-                        name=[c_ast.Constant("int", "0"), c_ast.Id("a")],
-                        expr=c_ast.InitList([c_ast.Constant("int", "1")]),
+                    NamedInitializer(
+                        name=[Constant("int", "0"), Id("a")],
+                        expr=InitList([Constant("int", "1")]),
                     ),
-                    c_ast.NamedInitializer(
-                        name=[c_ast.Constant("int", "1"), c_ast.Id("a"), c_ast.Constant("int", "0")],
-                        expr=c_ast.Constant("int", "2"),
+                    NamedInitializer(
+                        name=[Constant("int", "1"), Id("a"), Constant("int", "0")],
+                        expr=Constant("int", "2"),
                     ),
                 ]
             ),
         ),
         (
             "int a = { .a = 1, .c = 3, 4, .b = 5};",
-            c_ast.InitList(
+            InitList(
                 [
-                    c_ast.NamedInitializer(name=[c_ast.Id("a")], expr=c_ast.Constant("int", "1")),
-                    c_ast.NamedInitializer(name=[c_ast.Id("c")], expr=c_ast.Constant("int", "3")),
-                    c_ast.Constant("int", "4"),
-                    c_ast.NamedInitializer(name=[c_ast.Id("b")], expr=c_ast.Constant("int", "5")),
+                    NamedInitializer(name=[Id("a")], expr=Constant("int", "1")),
+                    NamedInitializer(name=[Id("c")], expr=Constant("int", "3")),
+                    Constant("int", "4"),
+                    NamedInitializer(name=[Id("b")], expr=Constant("int", "5")),
                 ]
             ),
         ),
     ],
 )
-def test_decl_named_inits(test_input: str, expected: c_ast.AST):
+def test_decl_named_inits(test_input: str, expected: AST):
     tree = parse(test_input)
-    assert isinstance(tree.ext[0], c_ast.Decl)
+    assert isinstance(tree.ext[0], Decl)
 
     init = tree.ext[0].init
-    assert isinstance(init, c_ast.InitList)
+    assert isinstance(init, InitList)
     assert init == expected
 
 
@@ -2364,16 +1995,16 @@ def test_decl_named_inits(test_input: str, expected: c_ast.AST):
     [
         (
             "int factorial(int p)\n{\n    return 3;\n}",
-            c_ast.FuncDef(
-                decl=c_ast.Decl(
+            FuncDef(
+                decl=Decl(
                     "factorial",
-                    c_ast.FuncDecl(
-                        args=c_ast.ParamList([c_ast.Decl("p", c_ast.TypeDecl("p", type=c_ast.IdType(["int"])))]),
-                        type=c_ast.TypeDecl("factorial", type=c_ast.IdType(["int"])),
+                    FuncDecl(
+                        args=ParamList([Decl("p", TypeDecl("p", type=IdType(["int"])))]),
+                        type=TypeDecl("factorial", type=IdType(["int"])),
                     ),
                 ),
                 param_decls=None,
-                body=c_ast.Compound([c_ast.Return(expr=c_ast.Constant("int", "3"))]),
+                body=Compound([Return(expr=Constant("int", "3"))]),
             ),
         ),
         (
@@ -2385,33 +2016,30 @@ def test_decl_named_inits(test_input: str, expected: c_ast.AST):
             "    a = b + 2;\n"
             "    return 3;\n"
             "}",
-            c_ast.FuncDef(
-                decl=c_ast.Decl(
+            FuncDef(
+                decl=Decl(
                     "zzz",
-                    c_ast.FuncDecl(
-                        args=c_ast.ParamList(
+                    FuncDecl(
+                        args=ParamList(
                             [
-                                c_ast.Decl("p", c_ast.TypeDecl("p", type=c_ast.IdType(["int"]))),
-                                c_ast.Decl(
-                                    "c",
-                                    c_ast.PtrDecl(quals=[], type=c_ast.TypeDecl("c", type=c_ast.IdType(["char"]))),
-                                ),
+                                Decl("p", TypeDecl("p", type=IdType(["int"]))),
+                                Decl("c", PtrDecl(quals=[], type=TypeDecl("c", type=IdType(["char"])))),
                             ]
                         ),
-                        type=c_ast.PtrDecl(quals=[], type=c_ast.TypeDecl("zzz", type=c_ast.IdType(["char"]))),
+                        type=PtrDecl(quals=[], type=TypeDecl("zzz", type=IdType(["char"]))),
                     ),
                 ),
                 param_decls=None,
-                body=c_ast.Compound(
+                body=Compound(
                     [
-                        c_ast.Decl("a", c_ast.TypeDecl("a", type=c_ast.IdType(["int"]))),
-                        c_ast.Decl("b", c_ast.TypeDecl("b", type=c_ast.IdType(["char"]))),
-                        c_ast.Assignment(
+                        Decl("a", TypeDecl("a", type=IdType(["int"]))),
+                        Decl("b", TypeDecl("b", type=IdType(["char"]))),
+                        Assignment(
                             op="=",
-                            left=c_ast.Id("a"),
-                            right=c_ast.BinaryOp(op="+", left=c_ast.Id("b"), right=c_ast.Constant("int", "2")),
+                            left=Id("a"),
+                            right=BinaryOp(op="+", left=Id("b"), right=Constant("int", "2")),
                         ),
-                        c_ast.Return(expr=c_ast.Constant("int", "3")),
+                        Return(expr=Constant("int", "3")),
                     ]
                 ),
             ),
@@ -2426,51 +2054,45 @@ def test_decl_named_inits(test_input: str, expected: c_ast.AST):
             "    a = b + 2;\n"
             "    return 3;\n"
             "}",
-            c_ast.FuncDef(
-                decl=c_ast.Decl(
+            FuncDef(
+                decl=Decl(
                     "zzz",
-                    c_ast.FuncDecl(
-                        args=c_ast.ParamList([c_ast.Id("p"), c_ast.Id("c")]),
-                        type=c_ast.PtrDecl(quals=[], type=c_ast.TypeDecl("zzz", type=c_ast.IdType(["char"]))),
+                    FuncDecl(
+                        args=ParamList([Id("p"), Id("c")]),
+                        type=PtrDecl(quals=[], type=TypeDecl("zzz", type=IdType(["char"]))),
                     ),
                 ),
                 param_decls=[
-                    c_ast.Decl("p", c_ast.TypeDecl("p", type=c_ast.IdType(["long"]))),
-                    c_ast.Decl("c", c_ast.PtrDecl(quals=[], type=c_ast.TypeDecl("c", type=c_ast.IdType(["long"])))),
+                    Decl("p", TypeDecl("p", type=IdType(["long"]))),
+                    Decl("c", PtrDecl(quals=[], type=TypeDecl("c", type=IdType(["long"])))),
                 ],
-                body=c_ast.Compound(
+                body=Compound(
                     [
-                        c_ast.Decl("a", c_ast.TypeDecl("a", type=c_ast.IdType(["int"]))),
-                        c_ast.Decl("b", c_ast.TypeDecl("b", type=c_ast.IdType(["char"]))),
-                        c_ast.Assignment(
+                        Decl("a", TypeDecl("a", type=IdType(["int"]))),
+                        Decl("b", TypeDecl("b", type=IdType(["char"]))),
+                        Assignment(
                             op="=",
-                            left=c_ast.Id("a"),
-                            right=c_ast.BinaryOp(op="+", left=c_ast.Id("b"), right=c_ast.Constant("int", "2")),
+                            left=Id("a"),
+                            right=BinaryOp(op="+", left=Id("b"), right=Constant("int", "2")),
                         ),
-                        c_ast.Return(expr=c_ast.Constant("int", "3")),
+                        Return(expr=Constant("int", "3")),
                     ]
                 ),
             ),
         ),
         pytest.param(
             "que(p)\n{\n    return 3;\n}",
-            c_ast.FuncDef(
-                decl=c_ast.Decl(
-                    "que",
-                    c_ast.FuncDecl(
-                        args=c_ast.ParamList([c_ast.Id("p")]),
-                        type=c_ast.TypeDecl("que", type=c_ast.IdType(["int"])),
-                    ),
-                ),
+            FuncDef(
+                decl=Decl("que", FuncDecl(args=ParamList([Id("p")]), type=TypeDecl("que", type=IdType(["int"])))),
                 param_decls=None,
-                body=c_ast.Compound([c_ast.Return(expr=c_ast.Constant("int", "3"))]),
+                body=Compound([Return(expr=Constant("int", "3"))]),
             ),
             id="function return values and parameters may not have type information",
         ),
     ],
 )
 @pytest.mark.xfail(reason="TODO")
-def test_function_definitions(test_input: str, expected: c_ast.AST):
+def test_function_definitions(test_input: str, expected: AST):
     tree = parse(test_input)
     assert tree.ext[0] == expected
 
@@ -2488,13 +2110,13 @@ int factorial(int p)
 
     tree = parse(test_input)
 
-    expected_assert_1 = c_ast.StaticAssert(cond=c_ast.Constant("int", "1"), message=c_ast.Constant("string", '"123"'))
+    expected_assert_1 = StaticAssert(cond=Constant("int", "1"), message=Constant("string", '"123"'))
     assert tree.ext[0] == expected_assert_1
 
-    expected_assert_2 = c_ast.StaticAssert(cond=c_ast.Constant("int", "2"), message=c_ast.Constant("string", '"456"'))
+    expected_assert_2 = StaticAssert(cond=Constant("int", "2"), message=Constant("string", '"456"'))
     assert tree.ext[1].body.block_items[0] == expected_assert_2  # pyright: ignore
 
-    expected_assert_3 = c_ast.StaticAssert(cond=c_ast.Constant("int", "3"), message=None)
+    expected_assert_3 = StaticAssert(cond=Constant("int", "3"), message=None)
     assert tree.ext[1].body.block_items[2] == expected_assert_3  # pyright: ignore
 
 
@@ -2503,26 +2125,26 @@ int factorial(int p)
     [
         pytest.param(
             'char* s = "hello";',
-            c_ast.Constant("string", '"hello"'),
+            Constant("string", '"hello"'),
             id="simple string, for reference",
         ),
         (
             'char* s = "hello" " world";',
-            c_ast.Constant("string", '"hello world"'),
+            Constant("string", '"hello world"'),
         ),
         (
             'char* s = "" "foobar";',
-            c_ast.Constant("string", '"foobar"'),
+            Constant("string", '"foobar"'),
         ),
         (
             r'char* s = "foo\"" "bar";',
-            c_ast.Constant("string", r'"foo\"bar"'),
+            Constant("string", r'"foo\"bar"'),
         ),
     ],
 )
-def test_unified_string_literals(test_input: str, expected: c_ast.AST):
+def test_unified_string_literals(test_input: str, expected: AST):
     tree = parse(test_input)
-    assert isinstance(tree.ext[0], c_ast.Decl)
+    assert isinstance(tree.ext[0], Decl)
 
     assert tree.ext[0].init == expected
 
@@ -2541,7 +2163,7 @@ def test_escapes_in_unified_string_literals():
     with pytest.raises(CParsingError):
         tree = parse(test_input)
 
-    expected = c_ast.Constant("string", r'"\123"')
+    expected = Constant("string", r'"\123"')
     assert tree.ext[0].init == expected  # pyright: ignore
 
 
@@ -2566,18 +2188,12 @@ int main() {
 @pytest.mark.parametrize(
     ("test_input", "expected"),
     [
-        (
-            'char* s = L"hello" L"world";',
-            c_ast.Constant("string", 'L"helloworld"'),
-        ),
-        (
-            'char* s = L"hello " L"world" L" and I";',
-            c_ast.Constant("string", 'L"hello world and I"'),
-        ),
+        ('char* s = L"hello" L"world";', Constant("string", 'L"helloworld"')),
+        ('char* s = L"hello " L"world" L" and I";', Constant("string", 'L"hello world and I"')),
     ],
 )
 @pytest.mark.xfail(reason="TODO")
-def test_unified_wstring_literals(test_input: str, expected: c_ast.AST):
+def test_unified_wstring_literals(test_input: str, expected: AST):
     tree = parse(test_input)
 
     assert tree.ext[0].init == expected  # pyright: ignore
@@ -2611,10 +2227,10 @@ int main() {
 
     tree = parse(test_input)
 
-    expected_dim_1 = c_ast.Assignment(op="=", left=c_ast.Id("size"), right=c_ast.Constant("int", "5"))
+    expected_dim_1 = Assignment(op="=", left=Id("size"), right=Constant("int", "5"))
     assert tree.ext[0].body.block_items[1].type.dim == expected_dim_1  # pyright: ignore
 
-    expected_dim_2 = c_ast.Id("*")
+    expected_dim_2 = Id("*")
     assert tree.ext[0].body.block_items[2].type.dim == expected_dim_2  # pyright: ignore
 
 
@@ -2640,27 +2256,27 @@ _Pragma("other \"string\"")
     tree = parse(test_input)
 
     pragma1 = tree.ext[0]
-    assert pragma1 == c_ast.Pragma("bar")
+    assert pragma1 == Pragma("bar")
     assert pragma1.coord.line_start == 2  # pyright: ignore
 
     pragma2 = tree.ext[1].body.block_items[0]  # pyright: ignore
-    assert pragma2 == c_ast.Pragma("foo")
+    assert pragma2 == Pragma("foo")
     assert pragma2.coord.line_start == 4  # pyright: ignore
 
     pragma3 = tree.ext[1].body.block_items[2]  # pyright: ignore
-    assert pragma3 == c_ast.Pragma("baz")
+    assert pragma3 == Pragma("baz")
     assert pragma3.coord.line_start == 6  # pyright: ignore
 
     pragma4 = tree.ext[1].body.block_items[4]  # pyright: ignore
-    assert pragma4 == c_ast.Pragma("")
+    assert pragma4 == Pragma("")
     assert pragma4.coord.line_start == 10  # pyright: ignore
 
     pragma5 = tree.ext[2].body.block_items[0]  # pyright: ignore
-    assert pragma5 == c_ast.Pragma("baz")
+    assert pragma5 == Pragma("baz")
     assert pragma5.coord.line_start == 13  # pyright: ignore
 
     pragma6 = tree.ext[3]
-    assert pragma6 == c_ast.Pragma(r'"other \"string\""')
+    assert pragma6 == Pragma(r'"other \"string\""')
     assert pragma6.coord.line_start == 15  # pyright: ignore
 
 
@@ -2695,60 +2311,45 @@ void main() {
     tree = parse(test_input)
 
     expected_list = [
-        c_ast.Decl(
+        Decl(
             "sum",
-            c_ast.TypeDecl("sum", type=c_ast.IdType(["int"])),
-            init=c_ast.Constant("int", "0"),
+            TypeDecl("sum", type=IdType(["int"])),
+            init=Constant("int", "0"),
         ),
-        c_ast.For(
-            init=c_ast.DeclList([c_ast.Decl("i", c_ast.TypeDecl("i", type=c_ast.IdType(["int"])))]),
-            cond=c_ast.BinaryOp(op="<", left=c_ast.Id("i"), right=c_ast.Constant("int", "3")),
-            next=c_ast.UnaryOp(op="p++", expr=c_ast.Id("i")),
-            stmt=c_ast.Compound(
-                [
-                    c_ast.Pragma("omp critical"),
-                    c_ast.Assignment(op="+=", left=c_ast.Id("sum"), right=c_ast.Constant("int", "1")),
-                ]
-            ),
+        For(
+            init=DeclList([Decl("i", TypeDecl("i", type=IdType(["int"])))]),
+            cond=BinaryOp(op="<", left=Id("i"), right=Constant("int", "3")),
+            next=UnaryOp(op="p++", expr=Id("i")),
+            stmt=Compound([Pragma("omp critical"), Assignment(op="+=", left=Id("sum"), right=Constant("int", "1"))]),
         ),
-        c_ast.While(
-            cond=c_ast.BinaryOp(op="<", left=c_ast.Id("sum"), right=c_ast.Constant("int", "10")),
-            stmt=c_ast.Compound(
-                [
-                    c_ast.Pragma("omp critical"),
-                    c_ast.Assignment(op="+=", left=c_ast.Id("sum"), right=c_ast.Constant("int", "1")),
-                ]
-            ),
+        While(
+            cond=BinaryOp(op="<", left=Id("sum"), right=Constant("int", "10")),
+            stmt=Compound([Pragma("omp critical"), Assignment(op="+=", left=Id("sum"), right=Constant("int", "1"))]),
         ),
-        c_ast.Label(
+        Label(
             "mylabel",
-            stmt=c_ast.Compound(
-                [
-                    c_ast.Pragma("foo"),
-                    c_ast.Assignment(op="+=", left=c_ast.Id("sum"), right=c_ast.Constant("int", "10")),
-                ]
-            ),
+            stmt=Compound([Pragma("foo"), Assignment(op="+=", left=Id("sum"), right=Constant("int", "10"))]),
         ),
-        c_ast.If(
-            cond=c_ast.BinaryOp(op=">", left=c_ast.Id("sum"), right=c_ast.Constant("int", "10")),
-            iftrue=c_ast.Compound(
+        If(
+            cond=BinaryOp(op=">", left=Id("sum"), right=Constant("int", "10")),
+            iftrue=Compound(
                 [
-                    c_ast.Pragma("bar"),
-                    c_ast.Pragma("baz"),
-                    c_ast.Assignment(op="=", left=c_ast.Id("sum"), right=c_ast.Constant("int", "10")),
+                    Pragma("bar"),
+                    Pragma("baz"),
+                    Assignment(op="=", left=Id("sum"), right=Constant("int", "10")),
                 ]
             ),
             iffalse=None,
         ),
-        c_ast.Switch(
-            cond=c_ast.Id("sum"),
-            stmt=c_ast.Case(
-                expr=c_ast.Constant("int", "10"),
+        Switch(
+            cond=Id("sum"),
+            stmt=Case(
+                expr=Constant("int", "10"),
                 stmts=[
-                    c_ast.Compound(
+                    Compound(
                         [
-                            c_ast.Pragma(string="foo"),
-                            c_ast.Assignment(op="=", left=c_ast.Id("sum"), right=c_ast.Constant("int", "20")),
+                            Pragma(string="foo"),
+                            Assignment(op="=", left=Id("sum"), right=Constant("int", "20")),
                         ]
                     )
                 ],
@@ -2756,4 +2357,4 @@ void main() {
         ),
     ]
 
-    assert c_ast.compare(tree.ext[0].body.block_items, expected_list)  # pyright: ignore
+    assert compare(tree.ext[0].body.block_items, expected_list)  # pyright: ignore

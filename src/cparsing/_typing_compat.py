@@ -32,6 +32,7 @@ else:  # pragma: <3.12 cover
         field_specifiers: tuple[Union[type, Callable[..., object]], ...] = (),
         **kwargs: object,
     ) -> Callable[[_T], _T]:
+        # Implementation copied from typing_extensions with minor adjustments.
         def decorator(cls_or_fn: _T) -> _T:
             cls_or_fn.__dataclass_transform__ = {
                 "eq_default": eq_default,
@@ -46,6 +47,7 @@ else:  # pragma: <3.12 cover
         return decorator
 
     def override(arg: _T) -> _T:
+        # Implementation copied from typing_extensions with minor adjustments.
         try:
             arg.__override__ = True
         except AttributeError:  # pragma: no cover

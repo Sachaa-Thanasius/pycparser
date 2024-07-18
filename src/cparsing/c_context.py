@@ -11,14 +11,14 @@ from .c_parser import CParser
 from .utils import Coord
 
 
-__all__ = ("CContext", "CParsingError", "parse", "preprocess_file", "parse_file")
+__all__ = ("CParsingError", "CContext", "parse", "preprocess_file", "parse_file")
 
 
 class CParsingError(Exception):
     """Exception raised when something goes wrong while parsing."""
 
     def __init__(self, message: str, coord: Optional[Coord], *args: object) -> None:
-        super().__init__(f"{coord or '??'}: {message}", *args)
+        super().__init__(f'{coord or "... | ?:? - ?:?"}: {message}', *args)
         self.message = message
         self.coord = coord
 

@@ -30,6 +30,7 @@ from ._typing_compat import Self, TypeAlias, dataclass_transform, override
 
 
 _DBT_contra = TypeVar("_DBT_contra", bound="DatumBase", contravariant=True)
+_ClueGenableFunc: TypeAlias = Callable[[type[_DBT_contra]], tuple[str, Optional[dict[str, object]]]]
 
 
 class _ClueGenDescriptor(Protocol[_DBT_contra]):
@@ -37,14 +38,14 @@ class _ClueGenDescriptor(Protocol[_DBT_contra]):
     def __set_name__(self, owner: type[_DBT_contra], name: str) -> None: ...
 
 
-_ClueGenable: TypeAlias = Callable[[type[_DBT_contra]], tuple[str, Optional[dict[str, object]]]]
-
-
 _MISSING = object()
 
 
+__all__ = ("CLUEGEN_NOTHING", "cluegen", "all_clues", "all_defaults", "DatumBase", "Datum")
+
+
 @final
-class _Nothing:
+class _ClueGenNothing:
     __slots__ = ()
 
     @override
@@ -52,14 +53,11 @@ class _Nothing:
         return "CLUEGEN_NOTHING"
 
 
-CLUEGEN_NOTHING: Final = _Nothing()
-"""Sentinel that can act as a placeholder for a mutable default value in a signature."""
+CLUEGEN_NOTHING: Final = _ClueGenNothing()
+"""Sentinel that can act as a placeholder for a mutable default value for a cluegen function parameter."""
 
 
-__all__ = ("all_clues", "all_defaults", "cluegen", "DatumBase", "Datum")
-
-
-def cluegen(func: _ClueGenable[_DBT_contra]) -> _ClueGenDescriptor[_DBT_contra]:
+def cluegen(func: _ClueGenableFunc[_DBT_contra]) -> _ClueGenDescriptor[_DBT_contra]:
     """Create a custom ClueGen descriptor.
 
     Extended Summary

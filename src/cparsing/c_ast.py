@@ -16,13 +16,18 @@ from .utils import Coord
 __all__ = (
     # Nodes
     "AST",
-    "File",
-    "ExprList",
-    "Enumerator",
-    "EnumeratorList",
-    "ParamList",
+    "Id",
+    "Constant",
+    "Pragma",
+    "IdType",
+    "EmptyStatement",
     "EllipsisParam",
-    "Compound",
+    "NamedInitializer",
+    "InitList",
+    "CompoundLiteral",
+    "StaticAssert",
+    "StructRef",
+    "ParamList",
     "For",
     "While",
     "DoWhile",
@@ -39,33 +44,28 @@ __all__ = (
     "UnaryOp",
     "BinaryOp",
     "TernaryOp",
-    "Pragma",
-    "Id",
-    "Constant",
-    "EmptyStatement",
+    "Struct",
+    "Union",
+    "Enumerator",
+    "EnumeratorList",
+    "Enum",
+    "TypeDecl",
     "ArrayDecl",
+    "FuncDecl",
+    "PtrDecl",
+    "TypeModifier",
+    "Decl",
+    "Typedef",
+    "Typename",
+    "DeclList",
     "ArrayRef",
     "Alignas",
     "Cast",
-    "CompoundLiteral",
-    "Decl",
-    "DeclList",
-    "Enum",
+    "ExprList",
     "FuncCall",
-    "FuncDecl",
-    "TypeModifier",
+    "Compound",
     "FuncDef",
-    "IdType",
-    "InitList",
-    "NamedInitializer",
-    "PtrDecl",
-    "StaticAssert",
-    "Struct",
-    "StructRef",
-    "TypeDecl",
-    "Typedef",
-    "Typename",
-    "Union",
+    "File",
     # Helpers
     "compare",
     "iter_child_nodes",
@@ -121,7 +121,9 @@ else:
                     "    self.coord = coord",
                 )
             )
-            return f'def __init__(self, {args}{"," if args else ""} *, coord: Optional[int] = None) -> None:\n{body}\n', clues  # noqa: PLE0101
+            extra_comma = "," if args else ""
+            clues_with_coord = clues | {"coord": Optional[int]}
+            return f"def __init__(self, {args}{extra_comma} *, coord=None) -> None:\n{body}\n", clues_with_coord  # noqa: PLE0101
 
         __repr__ = object.__repr__  # NOTE: Delegate pretty-printing to dump() for the moment.
 
@@ -165,7 +167,7 @@ class EllipsisParam(AST):
 # endregion
 
 
-# region ----- Less basic
+# region ---- Less basic
 class NamedInitializer(AST):
     name: list[AST]
     expr: AST
@@ -290,12 +292,12 @@ class TernaryOp(AST):
 # region ---- Struct/Union/Enum
 class Struct(AST):
     name: Optional[str]
-    decls: Optional[list[AST]] = None
+    decls: Optional[list["Decl"]] = None
 
 
 class Union(AST):
     name: Optional[str]
-    decls: Optional[list[AST]] = None
+    decls: Optional[list["Decl"]] = None
 
 
 class Enumerator(AST):
@@ -477,6 +479,8 @@ def iter_child_nodes(node: AST) -> Generator[AST]:
 
 
 def walk(node: AST) -> Generator[AST]:
+    """Walk through an AST, breadth first."""
+
     stack: deque[AST] = deque([node])
     while stack:
         curr_node = stack.popleft()
@@ -739,9 +743,7 @@ class _Unparser(NodeVisitor):
             return f"{expr}"
 
     def _parenthesize_if(self, node: AST, condition: Callable[[AST], bool]) -> Generator[AST, str, str]:
-        """Visits "n" and returns its string representation, parenthesized if the condition function applied to the
-        node returns True.
-        """
+        """Visits a node and returns its string representation, parenthesized if the node fulfills a condition."""
 
         result = yield from self._visit_expression(node)
         return f"({result})" if condition(node) else result
@@ -749,15 +751,19 @@ class _Unparser(NodeVisitor):
     def _parenthesize_unless_simple(self, node: AST) -> Generator[AST, str, str]:
         return (yield from self._parenthesize_if(node, lambda n: not self.is_simple_node(n)))
 
-    def _generate_struct_union_body(self, members: list[AST]) -> Generator[AST, str, str]:
+    def _generate_struct_union_body(self, members: list[Decl]) -> Generator[AST, str, str]:
         results: list[str] = []
         for decl in members:
             results.append((yield from self._generate_stmt(decl)))
         return "".join(results)
 
     def _generate_stmt(self, node: AST, add_indent: bool = False) -> Generator[AST, str, str]:
-        """Generation from a statement node. This method exists as a wrapper for individual visit_* methods to handle
-        different treatment of some statements in this context.
+        """Generate from a statement node.
+
+        Extended Summary
+        ----------------
+        This method exists as a wrapper for individual visit_* methods to handle different treatment of some statements
+        in this context.
         """
 
         with contextlib.ExitStack() as ctx:
@@ -1098,7 +1104,7 @@ class _Unparser(NodeVisitor):
         return "".join(results)
 
     def visit_Compound(self, node: Compound) -> Generator[AST, str, str]:
-        results: list[str] = [self.indent + "{\n"]
+        results = [self.indent + "{\n"]
         with self.add_indent_level(2):
             if node.block_items:
                 block_statements: list[str] = []

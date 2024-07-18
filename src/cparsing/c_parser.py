@@ -208,9 +208,6 @@ def fix_switch_cases(switch_node: c_ast.Switch) -> c_ast.Switch:
                     break
     """
 
-    if not isinstance(switch_node, c_ast.Switch):
-        raise TypeError(switch_node)
-
     if not isinstance(switch_node.stmt, c_ast.Compound):
         return switch_node
 
@@ -955,7 +952,7 @@ class CParser(Parser):
         # None means no list of members
         return klass(name=p[1], decls=None, coord=Coord.from_prod(p, self))
 
-    @_("struct_or_union lbrace { struct_declaration } rbrace")
+    @_('struct_or_union "{" { struct_declaration } "}"')
     def struct_or_union_specifier(self, p: YaccProd):
         klass = c_ast.Struct if (p.struct_or_union == "struct") else c_ast.Union
         # Empty sequence means an empty list of members
@@ -963,8 +960,8 @@ class CParser(Parser):
         return klass(name=None, decls=decls, coord=Coord.from_prod(p, self))
 
     @_(
-        "struct_or_union ID lbrace { struct_declaration } rbrace",
-        "struct_or_union TYPEID lbrace { struct_declaration } rbrace",
+        'struct_or_union ID "{" { struct_declaration } "}"',
+        'struct_or_union TYPEID "{" { struct_declaration } "}"',
     )
     def struct_or_union_specifier(self, p: YaccProd):
         klass = c_ast.Struct if (p.struct_or_union == "struct") else c_ast.Union
@@ -1039,13 +1036,13 @@ class CParser(Parser):
     def enum_specifier(self, p: YaccProd):
         return c_ast.Enum(p[1], None, coord=Coord.from_prod(p, self))
 
-    @_("ENUM lbrace enumerator_list rbrace")
+    @_('ENUM "{" enumerator_list "}"')
     def enum_specifier(self, p: YaccProd):
         return c_ast.Enum(None, p.enumerator_list, coord=Coord.from_prod(p, self))
 
     @_(
-        "ENUM ID lbrace enumerator_list rbrace",
-        "ENUM TYPEID lbrace enumerator_list rbrace",
+        'ENUM ID "{" enumerator_list "}"',
+        'ENUM TYPEID "{" enumerator_list "}"',
     )
     def enum_specifier(self, p: YaccProd):
         return c_ast.Enum(p[1], p.enumerator_list, coord=Coord.from_prod(p, self))
@@ -1190,9 +1187,9 @@ class CParser(Parser):
         #   void foo(int TT) { TT = 10; }
         # Outside the function, TT is a typedef, but inside (starting and ending with the braces) it's a parameter.
         # The trouble begins with yacc's lookahead token. We don't know if we're declaring or defining a function
-        # until we see lbrace, but if we wait for yacc to trigger a rule on that token, then TT will have already been
+        # until we see "{", but if we wait for yacc to trigger a rule on that token, then TT will have already been
         # read and incorrectly interpreted as TYPEID.
-        # We need to add the parameters to the scope the moment the lexer sees lbrace.
+        # We need to add the parameters to the scope the moment the lexer sees "{".
         #
         if (self.lookahead is not None) and (self.lookahead.type == "{") and (func.args is not None):
             for param in func.args.params:
@@ -1208,7 +1205,7 @@ class CParser(Parser):
     # endregion
 
     @_("TIMES [ type_qualifier_list ] [ pointer ]")
-    def pointer(self, p: YaccProd):
+    def pointer(self, p: YaccProd) -> c_ast.PtrDecl:
         """Handle a pointer.
 
         Notes
@@ -1235,12 +1232,13 @@ class CParser(Parser):
             coord=Coord.from_prod(p, self),
         )
 
-        if p.pointer is not None:
-            tail_type = p.pointer
+        pointer: Optional[c_ast.PtrDecl] = p.pointer
+        if pointer is not None:
+            tail_type = pointer
             while tail_type.type is not None:
                 tail_type = tail_type.type
-            tail_type.type = nested_type
-            return p.pointer
+            tail_type.type = nested_type  # pyright: ignore
+            return pointer
         else:
             return nested_type
 
@@ -1321,8 +1319,8 @@ class CParser(Parser):
         return p.assignment_expression
 
     @_(
-        "lbrace [ initializer_list ] rbrace",
-        'lbrace initializer_list "," rbrace',
+        '"{" [ initializer_list ] "}"',
+        '"{" initializer_list "," "}"',
     )
     def initializer(self, p: YaccProd):
         if p.initializer_list is not None:
@@ -1465,7 +1463,7 @@ class CParser(Parser):
         item = p[0]
         return item if isinstance(item, list) else [item]  # pyright: ignore [reportUnknownVariableType]
 
-    @_("lbrace { block_item } rbrace")
+    @_('"{" { block_item } "}"')
     def compound_statement(self, p: YaccProd):
         """Handle a compound statement.
 
@@ -1576,12 +1574,8 @@ class CParser(Parser):
 
     @_("unary_expression assignment_operator assignment_expression")
     def assignment_expression(self, p: YaccProd):
-        return c_ast.Assignment(
-            p.assignment_operator,
-            p.unary_expression,
-            p.assignment_expression,
-            coord=p.assignment_operator.coord,
-        )
+        coord = p.assignment_operator.coord
+        return c_ast.Assignment(p.assignment_operator, p.unary_expression, p.assignment_expression, coord=coord)
 
     @_(
         "EQUALS",
@@ -1618,12 +1612,8 @@ class CParser(Parser):
 
     @_('binary_expression CONDOP expression ":" conditional_expression')
     def conditional_expression(self, p: YaccProd):
-        return c_ast.TernaryOp(
-            p.binary_expression,
-            p.expression,
-            p.conditional_expression,
-            coord=p.binary_expression.coord,
-        )
+        coord = p.binary_expression.coord
+        return c_ast.TernaryOp(p.binary_expression, p.expression, p.conditional_expression, coord=coord)
 
     @_("cast_expression")
     def binary_expression(self, p: YaccProd):
@@ -1710,7 +1700,7 @@ class CParser(Parser):
     def postfix_expression(self, p: YaccProd):
         return c_ast.UnaryOp("p" + p[1], p.postfix_expression, coord=p[1].coord)
 
-    @_('"(" type_name ")" lbrace initializer_list [ "," ] rbrace')
+    @_('"(" type_name ")" "{" initializer_list [ "," ] "}"')
     def postfix_expression(self, p: YaccProd):
         return c_ast.CompoundLiteral(p.type_name, p.initializer_list)
 
@@ -1737,12 +1727,8 @@ class CParser(Parser):
 
     @_('offsetof_member_designator "." identifier')
     def offsetof_member_designator(self, p: YaccProd):
-        return c_ast.StructRef(
-            p.offsetof_member_designator,
-            p[1],
-            p.identifer,
-            coord=p.offsetof_member_designator.coord,
-        )
+        coord = p.offsetof_member_designator.coord
+        return c_ast.StructRef(p.offsetof_member_designator, p[1], p.identifer, coord=coord)
 
     @_('offsetof_member_designator "[" expression "]"')
     def offsetof_member_designator(self, p: YaccProd):
@@ -1828,14 +1814,6 @@ class CParser(Parser):
         og_col_end: int = p.unified_wstring_literal.coord.col_end
         p.unified_wstring_literal.coord.col_end = og_col_end + len(p.unified_wstring_literal.value)
         return p.unified_wstring_literal
-
-    @_("'{'")
-    def lbrace(self, p: YaccProd):
-        return p[0]
-
-    @_("'}'")
-    def rbrace(self, p: YaccProd):
-        return p[0]
 
     # endregion
 
