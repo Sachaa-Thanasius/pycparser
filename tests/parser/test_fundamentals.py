@@ -911,7 +911,7 @@ void foo() {
     assert compare(tree.ext[0].body.block_items, expected_list)  # pyright: ignore
 
 
-@pytest.mark.xfail(reason="TODO")
+# @pytest.mark.xfail(reason="TODO")
 def test_compound_statement() -> None:
     test_input = """\
 void foo() {
@@ -1318,9 +1318,9 @@ struct _on_exit_args {
 };
 """
 
-    s7_ast = parse(test_input, filename="test.c")
-    assert s7_ast.ext[0].type.decls[2].coord == Coord(6, 22, filename="test.c")  # pyright: ignore
-    assert s7_ast.ext[0].type.decls[3].coord == Coord(r"D:\eli\cpp_stuff\libc_include/sys/reent.h", 78, 22)  # pyright: ignore
+    tree = parse(test_input, filename="test.c")
+    assert tree.ext[0].type.decls[2].coord == Coord(6, 22, filename="test.c")  # pyright: ignore
+    assert tree.ext[0].type.decls[3].coord == Coord(78, 22, filename=r"D:\eli\cpp_stuff\libc_include/sys/reent.h")  # pyright: ignore
 
 
 @pytest.mark.parametrize(
@@ -1993,7 +1993,7 @@ def test_decl_named_inits(test_input: str, expected: AST):
 @pytest.mark.parametrize(
     ("test_input", "expected"),
     [
-        (
+        pytest.param(
             "int factorial(int p)\n{\n    return 3;\n}",
             FuncDef(
                 decl=Decl(
@@ -2006,8 +2006,9 @@ def test_decl_named_inits(test_input: str, expected: AST):
                 param_decls=None,
                 body=Compound([Return(expr=Constant("int", "3"))]),
             ),
+            marks=pytest.mark.xfail(reason="TODO"),
         ),
-        (
+        pytest.param(
             "char* zzz(int p, char* c)\n"
             "{\n"
             "    int a;\n"
@@ -2043,8 +2044,9 @@ def test_decl_named_inits(test_input: str, expected: AST):
                     ]
                 ),
             ),
+            marks=pytest.mark.xfail(reason="TODO"),
         ),
-        (
+        pytest.param(
             "char* zzz(p, c)\n"
             "long p, *c;\n"
             "{\n"
@@ -2079,6 +2081,7 @@ def test_decl_named_inits(test_input: str, expected: AST):
                     ]
                 ),
             ),
+            marks=pytest.mark.xfail(reason="TODO"),
         ),
         pytest.param(
             "que(p)\n{\n    return 3;\n}",
@@ -2091,7 +2094,6 @@ def test_decl_named_inits(test_input: str, expected: AST):
         ),
     ],
 )
-@pytest.mark.xfail(reason="TODO")
 def test_function_definitions(test_input: str, expected: AST):
     tree = parse(test_input)
     assert tree.ext[0] == expected
@@ -2192,7 +2194,6 @@ int main() {
         ('char* s = L"hello " L"world" L" and I";', Constant("string", 'L"hello world and I"')),
     ],
 )
-@pytest.mark.xfail(reason="TODO")
 def test_unified_wstring_literals(test_input: str, expected: AST):
     tree = parse(test_input)
 
@@ -2311,11 +2312,7 @@ void main() {
     tree = parse(test_input)
 
     expected_list = [
-        Decl(
-            "sum",
-            TypeDecl("sum", type=IdType(["int"])),
-            init=Constant("int", "0"),
-        ),
+        Decl("sum", TypeDecl("sum", type=IdType(["int"])), init=Constant("int", "0")),
         For(
             init=DeclList([Decl("i", TypeDecl("i", type=IdType(["int"])))]),
             cond=BinaryOp(op="<", left=Id("i"), right=Constant("int", "3")),
@@ -2333,11 +2330,7 @@ void main() {
         If(
             cond=BinaryOp(op=">", left=Id("sum"), right=Constant("int", "10")),
             iftrue=Compound(
-                [
-                    Pragma("bar"),
-                    Pragma("baz"),
-                    Assignment(op="=", left=Id("sum"), right=Constant("int", "10")),
-                ]
+                [Pragma("bar"), Pragma("baz"), Assignment(op="=", left=Id("sum"), right=Constant("int", "10"))]
             ),
             iffalse=None,
         ),
@@ -2346,12 +2339,7 @@ void main() {
             stmt=Case(
                 expr=Constant("int", "10"),
                 stmts=[
-                    Compound(
-                        [
-                            Pragma(string="foo"),
-                            Assignment(op="=", left=Id("sum"), right=Constant("int", "20")),
-                        ]
-                    )
+                    Compound([Pragma(string="foo"), Assignment(op="=", left=Id("sum"), right=Constant("int", "20"))])
                 ],
             ),
         ),

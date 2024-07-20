@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Optional, Protocol
 from sly.yacc import YaccProduction
 
 from ._cluegen import Datum
-from ._typing_compat import Self, override
+from ._typing_compat import Self
 
 
 if TYPE_CHECKING:
@@ -39,18 +39,13 @@ class Coord(Datum):
 
         return cls(lineno, col_start, None, col_end, filename)
 
-    @override
     def __str__(self) -> str:
         line_end = self.line_end if (self.line_end is not None) else "?"
         col_end = self.col_end if (self.col_end is not None) else "?"
         return f"{self.filename} | {self.line_start}:{self.col_start} - {line_end}:{col_end}"
 
 
-class SubstituteDecorator(Protocol):
-    def __call__(self, sub: dict[str, str], *extra: dict[str, str]) -> Callable[[Callable[..., object]], None]: ...
-
-
-class substitute:
+class Substitute:
     def __init__(self, sub: dict[str, str], *extra: dict[str, str], namespace: dict[str, object]) -> None:
         """Save the given substitution maps for use with a template rule function."""
 
@@ -67,7 +62,7 @@ class substitute:
             new_name = reduce(lambda nm, sb: nm.replace(sb[0], sb[1]), sub.items(), func.__name__)
             new_func = self._copy_func_with_name(func, new_name)
 
-            # Perform substitution for the template rules and put them on the new function.
+            # Perform substitution on the template rules and put the generated rules on the new function.
             new_func.rules = [Template(rule_templ).substitute(sub) for rule_templ in reversed(func.rules)]  # pyright: ignore
 
             # Put the new rule function in the given namespace.
@@ -91,3 +86,14 @@ class substitute:
             new_func.__dict__ = func.__dict__.copy()
 
         return new_func
+
+
+class _LocalSubstitute(Protocol):
+    def __call__(self, sub: dict[str, str], *extra: dict[str, str]) -> Substitute: ...
+
+
+def substitute(namespace: dict[str, object]) -> _LocalSubstitute:
+    def inner(sub: dict[str, str], *extra: dict[str, str]) -> Substitute:
+        return Substitute(sub, *extra, namespace=namespace)
+
+    return inner

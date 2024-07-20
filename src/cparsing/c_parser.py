@@ -1,7 +1,6 @@
 # pyright: reportRedeclaration=none, reportUndefinedVariable=none
 """Module for parsing C tokens into an AST."""
 
-from functools import partial
 from typing import TYPE_CHECKING, Any, NoReturn, Optional, TypedDict, TypeVar, Union, cast, overload
 
 from sly import Parser
@@ -10,9 +9,9 @@ from sly.yacc import YaccProduction as YaccProd, YaccSymbol
 
 from . import c_ast, c_context
 from ._cluegen import Datum
-from ._typing_compat import NotRequired, Self, override
+from ._typing_compat import NotRequired, Self
 from .c_lexer import CLexer
-from .utils import Coord, SubstituteDecorator, substitute
+from .utils import Coord, substitute
 
 
 if TYPE_CHECKING:
@@ -211,16 +210,15 @@ def fix_switch_cases(switch_node: c_ast.Switch) -> c_ast.Switch:
     if not isinstance(switch_node.stmt, c_ast.Compound):
         return switch_node
 
-    # The new Compound child for the Switch, which will collect children in the correct order
+    # The new Compound child for the Switch, which will collect children in the correct order.
     new_compound = c_ast.Compound([], coord=switch_node.stmt.coord)
     assert isinstance(new_compound.block_items, list)
 
-    # The last Case/Default node
-    last_case: Optional[Union[c_ast.Case, c_ast.Default]] = None
+    # The last Case/Default node.
+    latest_case: Optional[Union[c_ast.Case, c_ast.Default]] = None
 
-    # Goes over the children of the Compound below the Switch, adding them
-    # either directly below new_compound or below the last Case as appropriate
-    # (for `switch(cond) {}`, block_items would have been None)
+    # Goes over the children of the Compound below the Switch, adding them either directly below new_compound
+    # or below the last Case as appropriate (for `switch(cond) {}`, block_items would have been None).
     for child in switch_node.stmt.block_items or []:
         if isinstance(child, (c_ast.Case, c_ast.Default)):
             # If it's a Case or Default:
@@ -229,17 +227,16 @@ def fix_switch_cases(switch_node: c_ast.Switch) -> c_ast.Switch:
             new_compound.block_items.append(child)
             while isinstance(child.stmts[0], (c_ast.Case, c_ast.Default)):
                 new_compound.block_items.append(child.stmts.pop())
-                child = new_compound.block_items[-1]
+                child = new_compound.block_items[-1]  # noqa: PLW2901
 
-            # _extract_nested_case(child, new_compound.block_items)
             print(new_compound.block_items)
-            last_case = cast(Union[c_ast.Case, c_ast.Default], new_compound.block_items[-1])
+            latest_case = cast(Union[c_ast.Case, c_ast.Default], new_compound.block_items[-1])
         else:
             # Other statements are added as children to the last case, if it exists.
-            if last_case is None:
-                new_compound.block_items.append(child)
+            if latest_case is not None:
+                latest_case.stmts.append(child)
             else:
-                last_case.stmts.append(child)
+                new_compound.block_items.append(child)
 
     switch_node.stmt = new_compound
     return switch_node
@@ -264,7 +261,7 @@ class CParser(Parser):
     )
     debugfile = "sly_cparser.out"
 
-    subst: SubstituteDecorator = partial(substitute, namespace=vars())
+    subst = substitute(vars())
 
     def __init__(self, ctx: "c_context.CContext") -> None:
         self.ctx = ctx
@@ -607,15 +604,17 @@ class CParser(Parser):
         print("---- Function declaration")
 
         if p.declaration_specifiers:
+            print("decl specifiers exist")
             spec: _DeclarationSpecifiers = p.declaration_specifiers
         else:
+            print("decl specifiers don't exist")
             # no declaration specifiers - "int" becomes the default type
             spec = _DeclarationSpecifiers(type=[c_ast.IdType(["int"], coord=p.id_declarator.coord)])
 
         return self._build_function_definition(
             spec=spec,
             decl=p.id_declarator,
-            param_decls=[decl for decl_list in p.declaration for decl in decl_list],
+            param_decls=[decl for decl_list in p.declaration for decl in decl_list] if p.declaration else None,
             body=p.compound_statement,
         )
 
@@ -1282,7 +1281,7 @@ class CParser(Parser):
 
         spec: _DeclarationSpecifiers = p.declaration_specifiers
         if not spec.type:
-            spec.type = [c_ast.IdType(["int"], coord=Coord.from_node(p.declaration_specifiers, self))]
+            spec.type.append(c_ast.IdType(["int"], coord=Coord.from_node(p.declaration_specifiers, self)))
         return self._build_declarations(spec, decls=[{"decl": p[1]}])[0]
 
     @_("declaration_specifiers [ abstract_declarator ]")
@@ -1596,8 +1595,7 @@ class CParser(Parser):
         Notes
         -----
         K&R2 defines these as many separate rules, to encode precedence and associativity. However, in our case,
-        SLY's built-in precedence/associativity specification feature can take care of it.
-        (see precedence declaration above)
+        SLY's built-in precedence/associativity specification feature can take care of it (see `CParser.precedence`).
         """
 
         return p[0]
@@ -1811,13 +1809,13 @@ class CParser(Parser):
     )
     def unified_wstring_literal(self, p: YaccProd):
         p.unified_wstring_literal.value = p.unified_wstring_literal.value.rstrip()[:-1] + p[1][2:]
-        og_col_end: int = p.unified_wstring_literal.coord.col_end
-        p.unified_wstring_literal.coord.col_end = og_col_end + len(p.unified_wstring_literal.value)
+        og_col_end: Optional[int] = p.unified_wstring_literal.coord.col_end
+        if og_col_end is not None:
+            p.unified_wstring_literal.coord.col_end = og_col_end + len(p.unified_wstring_literal.value)
         return p.unified_wstring_literal
 
     # endregion
 
-    @override
     def error(self, token: Optional[Union[Token, YaccSymbol]]) -> NoReturn:
         if token:
             msg = "Syntax error."
@@ -1825,6 +1823,5 @@ class CParser(Parser):
         else:
             msg = "Parse error in input. EOF."
             location = Coord(-1, -1)
-        location.filename = self.ctx.filename
 
         self.ctx.error(msg, location, token)

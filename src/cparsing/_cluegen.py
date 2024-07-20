@@ -26,7 +26,7 @@ from functools import reduce
 from types import MemberDescriptorType
 from typing import ClassVar, Final, Optional, Protocol, TypeVar, final, get_origin
 
-from ._typing_compat import Self, TypeAlias, dataclass_transform, override
+from ._typing_compat import Self, TypeAlias, dataclass_transform
 
 
 _DBT_contra = TypeVar("_DBT_contra", bound="DatumBase", contravariant=True)
@@ -48,7 +48,6 @@ __all__ = ("CLUEGEN_NOTHING", "cluegen", "all_clues", "all_defaults", "DatumBase
 class _ClueGenNothing:
     __slots__ = ()
 
-    @override
     def __repr__(self) -> str:
         return "CLUEGEN_NOTHING"
 

@@ -202,10 +202,9 @@ pythonPlatform = "All"
 typeCheckingMode = "strict"
 
 reportPrivateUsage = "none"                    # We're the package; of course we're accessing internals.
-reportUnnecessaryIsInstance = "information"           # We should account for garbage input from users.
+reportUnnecessaryIsInstance = "information"    # We should account for garbage input from users.
 reportUninitializedInstanceVariable = "none"   # Nice as an infrequent checkup, but usually noisy.
 reportCallInDefaultInitializer = "warning"
-reportImplicitOverride = "warning"
 reportImportCycles = "none"                    # Nice as an infrequent checkup, but "if TYPE_CHECKING" causes false positives.
 reportPropertyTypeMismatch = "error"
 reportShadowedImports = "error"

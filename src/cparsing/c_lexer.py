@@ -8,7 +8,6 @@ from sly import Lexer
 from sly.lex import Token
 
 from . import c_context
-from ._typing_compat import override
 from .utils import Coord
 
 
@@ -357,7 +356,6 @@ class CLexer(Lexer):
     def ignore_newline(self, t: Token) -> None:
         self.lineno += t.value.count("\n")
 
-    @override
     def error(self, t: Token, msg: Optional[str] = None) -> NoReturn:
         msg = msg or f"Bad character {t.value[0]!r}"
         column = _find_column(self.text, t)
@@ -412,7 +410,6 @@ class PreprocessorLineLexer(Lexer):
 
         self.pop_state()
 
-    @override
     def error(self, t: Token, msg: Optional[str] = None) -> NoReturn:
         msg = msg or f"invalid #line directive {t.value}"
         column = _find_column(self.text, t)
@@ -444,7 +441,6 @@ class PreprocessorPragmaLexer(Lexer):
         self.lineno += 1
         self.pop_state()
 
-    @override
     def error(self, t: Token, msg: Optional[str] = None) -> NoReturn:
         msg = msg or f"invalid #pragma directive {t.value}"
         column = _find_column(self.text, t)

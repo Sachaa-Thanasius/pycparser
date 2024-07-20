@@ -9,7 +9,7 @@ from types import GeneratorType, MemberDescriptorType
 from typing import TYPE_CHECKING, Any, Callable, ClassVar, Optional, Union as TUnion
 
 from ._cluegen import Datum, all_clues, all_defaults, cluegen
-from ._typing_compat import Self, TypeAlias, TypeGuard, override
+from ._typing_compat import Self, TypeAlias, TypeGuard
 from .utils import Coord
 
 
@@ -127,7 +127,6 @@ else:
 
         __repr__ = object.__repr__  # NOTE: Delegate pretty-printing to dump() for the moment.
 
-        @override
         def __eq__(self, other: object) -> bool:
             """Return whether two nodes have the same values (disregarding coordinates)."""
 
@@ -611,7 +610,6 @@ class _NodePrettyPrinter(NodeVisitor):
 
                 self.remove_extra_separator()
 
-    @override
     def generic_visit(self, node: AST) -> Generator[AST]:
         with self.add_indent_level():
             self.write(f"{type(node).__name__}")
@@ -723,11 +721,14 @@ class _Unparser(NodeVisitor):
         finally:
             self.indent_level -= val
 
-    @staticmethod
-    def is_simple_node(node: AST) -> TypeGuard[TUnion[Constant, Id, ArrayRef, StructRef, FuncCall]]:
+    @classmethod
+    def is_simple_node(cls, node: AST) -> TypeGuard[TUnion[Constant, Id, ArrayRef, StructRef, FuncCall]]:
         return isinstance(node, (Constant, Id, ArrayRef, StructRef, FuncCall))
 
-    @override
+    @classmethod
+    def is_not_simple_node(cls, node: AST) -> bool:
+        return not cls.is_simple_node(node)
+
     def generic_visit(self, node: Optional[AST]) -> Generator[AST, Any, str]:
         if node is not None:
             yield from super().generic_visit(node)
@@ -747,9 +748,6 @@ class _Unparser(NodeVisitor):
 
         result = yield from self._visit_expression(node)
         return f"({result})" if condition(node) else result
-
-    def _parenthesize_unless_simple(self, node: AST) -> Generator[AST, str, str]:
-        return (yield from self._parenthesize_if(node, lambda n: not self.is_simple_node(n)))
 
     def _generate_struct_union_body(self, members: list[Decl]) -> Generator[AST, str, str]:
         results: list[str] = []
@@ -812,15 +810,15 @@ class _Unparser(NodeVisitor):
         results: list[str] = []
 
         if node.funcspec:
-            results.append(" ".join(node.funcspec) + " ")
+            results.append(" ".join(node.funcspec))
         if node.storage:
-            results.append(" ".join(node.storage) + " ")
+            results.append(" ".join(node.storage))
         if node.align:
             align = yield node.align[0]
-            results.append(f"{align} ")
+            results.append(align)
 
         results.append((yield from self._generate_type(node.type)))
-        return "".join(results)
+        return " ".join(results)
 
     def _generate_type(
         self,
@@ -902,38 +900,36 @@ class _Unparser(NodeVisitor):
         return node.name
 
     def visit_Pragma(self, node: Pragma) -> str:
-        ret = ["#pragma"]
+        ret = "#pragma"
         if node.string:
-            ret.append(f"{node.string}")
-        return " ".join(ret)
+            ret += f" {node.string}"
+        return ret
 
     def visit_ArrayRef(self, node: ArrayRef) -> Generator[AST, str, str]:
-        arrref = yield from self._parenthesize_unless_simple(node.name)
+        arrref = yield from self._parenthesize_if(node.name, self.is_not_simple_node)
         subscript = yield node.subscript
         return f"{arrref}[{subscript}]"
 
     def visit_StructRef(self, node: StructRef) -> Generator[AST, str, str]:
-        sref = yield from self._parenthesize_unless_simple(node.name)
+        sref = yield from self._parenthesize_if(node.name, self.is_not_simple_node)
         field = yield node.field
         return f"{sref}{node.type}{field}"
 
     def visit_FuncCall(self, node: FuncCall) -> Generator[AST, str, str]:
-        fref = yield from self._parenthesize_unless_simple(node.name)
+        fref = yield from self._parenthesize_if(node.name, self.is_not_simple_node)
         args = yield node.args
         return f"{fref}({args})"
 
     def visit_UnaryOp(self, node: UnaryOp) -> Generator[AST, str, str]:
+        operand = yield from self._parenthesize_if(node.expr, self.is_not_simple_node)
         if node.op == "sizeof":
-            expr = yield node.expr
-            return f"sizeof{expr}"
+            return f"sizeof({operand})"
+        elif node.op == "p++":
+            return f"{operand}++"
+        elif node.op == "p--":
+            return f"{operand}--"
         else:
-            operand = yield from self._parenthesize_unless_simple(node.expr)
-            if node.op == "p++":
-                return f"{operand}++"
-            elif node.op == "p--":
-                return f"{operand}--"
-            else:
-                return f"{node.op}{operand}"
+            return f"{node.op} {operand}"
 
     def visit_BinaryOp(self, node: BinaryOp) -> Generator[AST, str, str]:
         # Note: all binary operators are left-to-right associative
@@ -1027,7 +1023,7 @@ class _Unparser(NodeVisitor):
         return "".join(result)
 
     def visit_Cast(self, node: Cast) -> Generator[AST, str, str]:
-        expr_str = yield from self._parenthesize_unless_simple(node.expr)
+        expr_str = yield from self._parenthesize_if(node.expr, self.is_not_simple_node)
         type_ = yield from self._generate_type(node.to_type, emit_declname=False)
         return f"({type_}) {expr_str}"
 

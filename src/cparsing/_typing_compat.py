@@ -11,13 +11,26 @@ else:  # pragma: no cover
     from typing import _GenericAlias
 
 
-__all__ = ("NotRequired", "Self", "TypeAlias", "TypeGuard", "dataclass_transform", "override")
+__all__ = ("NotRequired", "Self", "TypeAlias", "TypeGuard", "dataclass_transform")
+
+
+class _PlaceholderGenericAlias(_GenericAlias):
+    def __repr__(self) -> str:
+        return f"<placeholder for {super().__repr__()}>"
+
+
+class _PlaceholderMeta(type):
+    def __getitem__(self, item: object) -> _PlaceholderGenericAlias:
+        return _PlaceholderGenericAlias(self, item)
+
+    def __repr__(self) -> str:
+        return f"<placeholder for {super().__repr__()}>"
 
 
 if sys.version_info >= (3, 12):  # pragma: >=3.12 cover
-    from typing import dataclass_transform, override
+    from typing import dataclass_transform
 elif TYPE_CHECKING:
-    from typing_extensions import dataclass_transform, override
+    from typing_extensions import dataclass_transform
 else:  # pragma: <3.12 cover
     from typing import TypeVar, Union
 
@@ -45,29 +58,6 @@ else:  # pragma: <3.12 cover
             return cls_or_fn
 
         return decorator
-
-    def override(arg: _T) -> _T:
-        # Implementation copied from typing_extensions with minor adjustments.
-        try:
-            arg.__override__ = True
-        except AttributeError:  # pragma: no cover
-            pass
-        return arg
-
-
-class _PlaceholderGenericAlias(_GenericAlias):
-    @override
-    def __repr__(self) -> str:
-        return f"<placeholder for {super().__repr__()}>"
-
-
-class _PlaceholderMeta(type):
-    def __getitem__(self, item: object) -> _PlaceholderGenericAlias:
-        return _PlaceholderGenericAlias(self, item)
-
-    @override
-    def __repr__(self) -> str:
-        return f"<placeholder for {super().__repr__()}>"
 
 
 if sys.version_info >= (3, 11):  # pragma: >=3.11 cover
