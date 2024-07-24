@@ -848,8 +848,7 @@ class _Unparser(NodeVisitor):
 
             nstr = [node.declname if (node.declname and emit_declname) else ""]
             # Resolve modifiers.
-            # Wrap in parens to distinguish pointer to array and pointer to
-            # function syntax.
+            # Wrap in parens to distinguish pointer to array and pointer to function syntax.
             #
             for i, modifier in enumerate(modifiers):
                 if isinstance(modifier, ArrayDecl):
